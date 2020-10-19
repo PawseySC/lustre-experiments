@@ -213,6 +213,7 @@ void MMapRead(const char* fname, size_t fileSize, int nthreads) {
         fileSize % nthreads == 0 ? partSize : fileSize % nthreads;
     vector<char> buffer(fileSize);
     vector<future<size_t>> readers(nthreads);
+    mlockall(MCL_CURRENT); //normally a bad idea: locks *all* pages at once
     for (int t = 0; t != nthreads; ++t) {
         const size_t offset = partSize * t;
         const size_t sz = t != nthreads - 1 ? partSize : lastPartSize;
