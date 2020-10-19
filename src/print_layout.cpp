@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) {
     llapi_layout_stripe_size_get(layout, &size);
     uint64_t count = 0;
     llapi_layout_stripe_count_get(layout, &count);
-    //print
+    // print
     cout << "Stripe size: " << size << endl;
     cout << "Stripe count: " << count << endl;
     uint64_t ostIndex = uint64_t(-1);
@@ -25,7 +25,6 @@ int main(int argc, char* argv[]) {
         llapi_layout_ost_index_get(layout, i, &ostIndex);
         cout << "Stripe " << i << ": OST " << ostIndex << endl;
     }
-    /* Free layout */
     llapi_layout_free(layout);
 
     return 0;
