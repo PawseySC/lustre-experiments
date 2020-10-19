@@ -1,0 +1,86 @@
+uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 1 -m unbuffered
+File:         data/1Ghpc
+File size:    69024
+Stripe count: 1
+Stripe size:  1048576
+# threads:    1
+Elapsed time < 1ms 
+uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/4Ghpc -t 1 -m unbuffered
+4Ghpc       4Ghpc_copy  
+uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/4Ghpc -t 1 -m unbuffered
+File:         data/4Ghpc
+File size:    69024
+Stripe count: 1
+Stripe size:  1048576
+# threads:    1
+Bandwidth: 0.00459169 GiB/s
+uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 1 -m unbuffered
+File:         data/1Ghpc
+File size:    1073741824
+Stripe count: 1
+Stripe size:  1048576
+# threads:    1
+Bandwidth: 0.396825 GiB/s
+uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 1 -m unbuffered
+File:         data/1Ghpc
+File size:    1073741824
+Stripe count: 1
+Stripe size:  1048576
+# threads:    1
+Bandwidth: 1 GiB/s
+uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 1 -m buffered
+File:         data/1Ghpc
+File size:    1073741824
+Stripe count: 1
+Stripe size:  1048576
+# threads:    1
+Bandwidth: 1.04603 GiB/s
+uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 4 -m buffered
+File:         data/1Ghpc
+File size:    1073741824
+Stripe count: 1
+Stripe size:  1048576
+# threads:    4
+Bandwidth: 1.04275 GiB/s
+^V^Cuvaretto@nid00328:~/projects/lustre-scratch/tmp> ^C^C
+uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/4Ghpc -t 1 -m buffered
+File:         data/4Ghpc
+File size:    4294967296
+Stripe count: 1
+Stripe size:  1048576
+# threads:    1
+Bandwidth: 0.323441 GiB/s
+uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/4Ghpc -t 1 -m buffered
+File:         data/4Ghpc
+File size:    4294967296
+Stripe count: 1
+Stripe size:  1048576
+# threads:    1
+Bandwidth: 1.00604 GiB/s
+uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/4Ghpc -t 8 -m buffered
+File:         data/4Ghpc
+File size:    4294967296
+Stripe count: 1
+Stripe size:  1048576
+# threads:    8
+Bandwidth: 1.04712 GiB/s
+uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 4 -m unbuffered
+File:         data/1Ghpc
+File size:    1073741824
+Stripe count: 1
+Stripe size:  1048576
+# threads:    4
+Bandwidth: 1.0395 GiB/s
+uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 16 -m unbuffered
+File:         data/1Ghpc
+File size:    1073741824
+Stripe count: 1
+Stripe size:  1048576
+# threads:    16
+Bandwidth: 1.05485 GiB/s
+uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 16 -m unbuffered
+
+
+
+
+
