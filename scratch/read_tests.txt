@@ -1,86 +1,532 @@
-uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 1 -m unbuffered
-File:         data/1Ghpc
-File size:    69024
+
+uvaretto@z123:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/striped_10G_over_64/10Ghpc0 -t 64
+File:         data/striped_10G_over_64/10Ghpc0
+File size:    10737418240
+Stripe count: 64
+Stripe size:  167772160
+# threads:    64
+Read mode: unbuffered
+Bandwidth: 3.65097 GiB/s
+
+OST 91: 0.0576568 GiB/s
+OST 101: 0.0677287 GiB/s
+OST 0: 0.073947 GiB/s
+OST 43: 0.074017 GiB/s
+OST 51: 0.074228 GiB/s
+OST 8: 0.0746893 GiB/s
+OST 66: 0.0751202 GiB/s
+OST 35: 0.0761081 GiB/s
+OST 102: 0.0762195 GiB/s
+OST 104: 0.078086 GiB/s
+OST 38: 0.0782816 GiB/s
+OST 109: 0.0784782 GiB/s
+OST 59: 0.0785571 GiB/s
+OST 27: 0.0786361 GiB/s
+OST 96: 0.078755 GiB/s
+OST 32: 0.0789141 GiB/s
+OST 53: 0.0790339 GiB/s
+OST 21: 0.079557 GiB/s
+OST 31: 0.0798824 GiB/s
+OST 86: 0.0800051 GiB/s
+OST 83: 0.0800871 GiB/s
+OST 19: 0.0802929 GiB/s
+OST 61: 0.0804583 GiB/s
+OST 99: 0.0805412 GiB/s
+OST 14: 0.0807076 GiB/s
+OST 110: 0.0809166 GiB/s
+OST 11: 0.0809586 GiB/s
+OST 93: 0.0815501 GiB/s
+OST 75: 0.081935 GiB/s
+OST 90: 0.0822368 GiB/s
+OST 82: 0.0822801 GiB/s
+OST 107: 0.0823669 GiB/s
+OST 69: 0.0825846 GiB/s
+OST 64: 0.0828473 GiB/s
+OST 18: 0.0829793 GiB/s
+OST 62: 0.0830675 GiB/s
+OST 30: 0.0831117 GiB/s
+OST 39: 0.0835115 GiB/s
+OST 70: 0.0839151 GiB/s
+OST 78: 0.0840506 GiB/s
+OST 77: 0.0845966 GiB/s
+OST 94: 0.0847802 GiB/s
+OST 85: 0.0851963 GiB/s
+OST 45: 0.0853359 GiB/s
+OST 98: 0.0854292 GiB/s
+OST 54: 0.0863737 GiB/s
+OST 34: 0.0865651 GiB/s
+OST 46: 0.0871931 GiB/s
+OST 106: 0.0886776 GiB/s
+OST 22: 0.0889806 GiB/s
+OST 24: 0.0890821 GiB/s
+OST 88: 0.0896443 GiB/s
+OST 15: 0.0907375 GiB/s
+OST 40: 0.0912142 GiB/s
+OST 50: 0.0912675 GiB/s
+OST 56: 0.0916422 GiB/s
+OST 48: 0.0921285 GiB/s
+OST 74: 0.0931168 GiB/s
+OST 3: 0.0974735 GiB/s
+OST 58: 0.0997128 GiB/s
+OST 5: 0.114974 GiB/s
+min:     0.0576568 GiB/s - OST 91
+Max:     0.114974 GiB/s - OST 5
+Max/min: 1.99411
+Average: 0.0830097 GiB/s
+Median:  0.0823669 - OST 107
+Standard deviation: 0.00766654 GiB/s
+Standard deviation / average %: 9.23571
+
+uvaretto@z123:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/10Ghpc0 -t 64
+File:         data/10Ghpc0
+File size:    10737418240
 Stripe count: 1
 Stripe size:  1048576
-# threads:    1
-Elapsed time < 1ms 
-uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/4Ghpc -t 1 -m unbuffered
-4Ghpc       4Ghpc_copy  
-uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/4Ghpc -t 1 -m unbuffered
-File:         data/4Ghpc
-File size:    69024
-Stripe count: 1
-Stripe size:  1048576
-# threads:    1
-Bandwidth: 0.00459169 GiB/s
-uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 1 -m unbuffered
-File:         data/1Ghpc
-File size:    1073741824
-Stripe count: 1
-Stripe size:  1048576
-# threads:    1
-Bandwidth: 0.396825 GiB/s
-uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 1 -m unbuffered
-File:         data/1Ghpc
-File size:    1073741824
-Stripe count: 1
-Stripe size:  1048576
-# threads:    1
-Bandwidth: 1 GiB/s
-uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 1 -m buffered
-File:         data/1Ghpc
-File size:    1073741824
-Stripe count: 1
-Stripe size:  1048576
-# threads:    1
-Bandwidth: 1.04603 GiB/s
-uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 4 -m buffered
-File:         data/1Ghpc
-File size:    1073741824
-Stripe count: 1
-Stripe size:  1048576
-# threads:    4
-Bandwidth: 1.04275 GiB/s
-^V^Cuvaretto@nid00328:~/projects/lustre-scratch/tmp> ^C^C
-uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/4Ghpc -t 1 -m buffered
-File:         data/4Ghpc
+# threads:    64
+Read mode: unbuffered
+Bandwidth: 0.552395 GiB/s
+
+uvaretto@z123:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/striped_4G_over_32/4Ghpc0 -t 1
+File:         data/striped_4G_over_32/4Ghpc0
 File size:    4294967296
+Stripe count: 32
+Stripe size:  134217728
+# threads:    1
+Read mode: unbuffered
+Bandwidth: 3.58102 GiB/s
+
+uvaretto@z123:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/striped_4G_over_32/4Ghpc2
+File:         data/striped_4G_over_32/4Ghpc2
+File size:    4294967296
+Stripe count: 32
+Stripe size:  134217728
+# threads:    32
+Read mode: unbuffered
+Bandwidth: 15.9363 GiB/s
+
+OST 102: 0.586854 GiB/s
+OST 32: 0.606796 GiB/s
+OST 64: 0.625 GiB/s
+OST 16: 0.647668 GiB/s
+OST 96: 0.679348 GiB/s
+OST 8: 0.686813 GiB/s
+OST 31: 0.714286 GiB/s
+OST 78: 0.739645 GiB/s
+OST 56: 0.753012 GiB/s
+OST 75: 0.796178 GiB/s
+OST 39: 0.827815 GiB/s
+OST 94: 0.838926 GiB/s
+OST 107: 0.892857 GiB/s
+OST 59: 0.905797 GiB/s
+OST 54: 0.919118 GiB/s
+OST 22: 0.94697 GiB/s
+OST 91: 0.961538 GiB/s
+OST 86: 0.968992 GiB/s
+OST 51: 0.984252 GiB/s
+OST 83: 1.02459 GiB/s
+OST 88: 1.07759 GiB/s
+OST 70: 1.11607 GiB/s
+OST 99: 1.19048 GiB/s
+OST 6: 1.21359 GiB/s
+OST 48: 1.30208 GiB/s
+OST 46: 1.5625 GiB/s
+OST 62: 1.73611 GiB/s
+OST 110: 1.83824 GiB/s
+min:     0.586854 GiB/s - OST 102
+Max:     1.83824 GiB/s - OST 110
+Max/min: 3.13235
+Average: 0.954315 GiB/s
+Median:  0.919118 - OST 54
+Standard deviation: 0.305402 GiB/s
+Standard deviation / average %: 32.0022
+uvaretto@z123:~/projects/lustre-scratch/tmp> 
+
+
+
+uvaretto@z123:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/striped_4G_over_32/4Ghpc2
+File:         data/striped_4G_over_32/4Ghpc2
+File size:    4294967296
+Stripe count: 32
+Stripe size:  134217728
+# threads:    32
+Read mode: unbuffered
+Bandwidth: 15.9363 GiB/s
+
+OST 102: 0.586854 GiB/s
+OST 32: 0.606796 GiB/s
+OST 64: 0.625 GiB/s
+OST 16: 0.647668 GiB/s
+OST 96: 0.679348 GiB/s
+OST 8: 0.686813 GiB/s
+OST 31: 0.714286 GiB/s
+OST 78: 0.739645 GiB/s
+OST 56: 0.753012 GiB/s
+OST 75: 0.796178 GiB/s
+OST 39: 0.827815 GiB/s
+OST 94: 0.838926 GiB/s
+OST 107: 0.892857 GiB/s
+OST 59: 0.905797 GiB/s
+OST 54: 0.919118 GiB/s
+OST 22: 0.94697 GiB/s
+OST 91: 0.961538 GiB/s
+OST 86: 0.968992 GiB/s
+OST 51: 0.984252 GiB/s
+OST 83: 1.02459 GiB/s
+OST 88: 1.07759 GiB/s
+OST 70: 1.11607 GiB/s
+OST 99: 1.19048 GiB/s
+OST 6: 1.21359 GiB/s
+OST 48: 1.30208 GiB/s
+OST 46: 1.5625 GiB/s
+OST 62: 1.73611 GiB/s
+OST 110: 1.83824 GiB/s
+min:     0.586854 GiB/s - OST 102
+Max:     1.83824 GiB/s - OST 110
+Max/min: 3.13235
+Average: 0.954315 GiB/s
+Median:  0.919118 - OST 54
+Standard deviation: 0.305402 GiB/s
+Standard deviation / average %: 32.0022
+uvaretto@z123:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/striped_4G_over_32/4Ghpc3
+File:         data/striped_4G_over_32/4Ghpc3
+File size:    4294967296
+Stripe count: 32
+Stripe size:  134217728
+# threads:    32
+Read mode: unbuffered
+Bandwidth: 16.9492 GiB/s
+
+OST 48: 0.565611 GiB/s
+OST 103: 0.576037 GiB/s
+OST 96: 0.578704 GiB/s
+OST 25: 0.586854 GiB/s
+OST 16: 0.600962 GiB/s
+OST 95: 0.606796 GiB/s
+OST 12: 0.612745 GiB/s
+OST 111: 0.618812 GiB/s
+OST 32: 0.757576 GiB/s
+OST 8: 0.762195 GiB/s
+OST 40: 0.766871 GiB/s
+OST 9: 0.776398 GiB/s
+OST 56: 0.827815 GiB/s
+OST 87: 0.862069 GiB/s
+OST 24: 0.874126 GiB/s
+OST 55: 0.905797 GiB/s
+OST 47: 0.93985 GiB/s
+OST 104: 0.954198 GiB/s
+OST 36: 1.03306 GiB/s
+OST 28: 1.09649 GiB/s
+OST 71: 1.13636 GiB/s
+OST 0: 1.23762 GiB/s
+OST 7: 1.28866 GiB/s
+OST 15: 1.42045 GiB/s
+OST 72: 1.45349 GiB/s
+OST 80: 1.58228 GiB/s
+OST 79: 2.11864 GiB/s
+OST 88: 2.15517 GiB/s
+min:     0.565611 GiB/s - OST 48
+Max:     2.15517 GiB/s - OST 88
+Max/min: 3.81034
+Average: 0.967976 GiB/s
+Median:  0.862069 - OST 87
+Standard deviation: 0.408685 GiB/s
+Standard deviation / average %: 42.2206
+uvaretto@z123:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/striped_10G_over_64/10Ghpc3
+File:         data/striped_10G_over_64/10Ghpc3
+File size:    10737418240
+Stripe count: 64
+Stripe size:  167772160
+# threads:    64
+Read mode: unbuffered
+Bandwidth: 2.68168 GiB/s
+
+OST 20: 0.0427614 GiB/s
+OST 68: 0.0597972 GiB/s
+OST 98: 0.0624251 GiB/s
+OST 28: 0.0626755 GiB/s
+OST 42: 0.0632335 GiB/s
+OST 65: 0.0633104 GiB/s
+OST 92: 0.0635421 GiB/s
+OST 63: 0.0639844 GiB/s
+OST 84: 0.0649148 GiB/s
+OST 36: 0.0655411 GiB/s
+OST 12: 0.0664046 GiB/s
+OST 73: 0.066546 GiB/s
+OST 71: 0.0666596 GiB/s
+OST 82: 0.0668306 GiB/s
+OST 52: 0.0671754 GiB/s
+OST 87: 0.0672622 GiB/s
+OST 18: 0.0673491 GiB/s
+OST 44: 0.0674363 GiB/s
+OST 33: 0.0682017 GiB/s
+OST 106: 0.0684406 GiB/s
+OST 2: 0.0687418 GiB/s
+OST 7: 0.068772 GiB/s
+OST 55: 0.0688629 GiB/s
+OST 109: 0.069076 GiB/s
+OST 101: 0.0691066 GiB/s
+OST 97: 0.069352 GiB/s
+OST 10: 0.0694444 GiB/s
+OST 37: 0.0695991 GiB/s
+OST 53: 0.0697545 GiB/s
+OST 95: 0.0700045 GiB/s
+OST 93: 0.0701302 GiB/s
+OST 13: 0.0702563 GiB/s
+OST 79: 0.0704463 GiB/s
+OST 108: 0.0707334 GiB/s
+OST 21: 0.0709905 GiB/s
+OST 47: 0.0710227 GiB/s
+OST 66: 0.071055 GiB/s
+OST 74: 0.071217 GiB/s
+OST 4: 0.0714449 GiB/s
+OST 69: 0.0715758 GiB/s
+OST 45: 0.0716743 GiB/s
+OST 34: 0.0717731 GiB/s
+OST 25: 0.0719052 GiB/s
+OST 23: 0.0720378 GiB/s
+OST 41: 0.0723715 GiB/s
+OST 60: 0.0726744 GiB/s
+OST 61: 0.072776 GiB/s
+OST 49: 0.0729458 GiB/s
+OST 57: 0.0730482 GiB/s
+OST 26: 0.073947 GiB/s
+OST 17: 0.0758495 GiB/s
+OST 85: 0.0767436 GiB/s
+OST 100: 0.0769325 GiB/s
+OST 29: 0.0771605 GiB/s
+OST 105: 0.0782032 GiB/s
+OST 1: 0.0783208 GiB/s
+OST 89: 0.0924009 GiB/s
+min:     0.0427614 GiB/s - OST 20
+Max:     0.0924009 GiB/s - OST 89
+Max/min: 2.16085
+Average: 0.0696061 GiB/s
+Median:  0.0700045 - OST 95
+Standard deviation: 0.00583819 GiB/s
+Standard deviation / average %: 8.38748
+uvaretto@z123:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/striped_10G_over_64/10Ghpc1
+File:         data/striped_10G_over_64/10Ghpc1
+File size:    10737418240
+Stripe count: 64
+Stripe size:  167772160
+# threads:    64
+Read mode: unbuffered
+Bandwidth: 3.12891 GiB/s
+
+OST 63: 0.0489966 GiB/s
+OST 72: 0.0595011 GiB/s
+OST 111: 0.0597514 GiB/s
+OST 17: 0.0598888 GiB/s
+OST 33: 0.0599118 GiB/s
+OST 76: 0.0604683 GiB/s
+OST 84: 0.0607504 GiB/s
+OST 80: 0.0613708 GiB/s
+OST 9: 0.0621767 GiB/s
+OST 82: 0.0623006 GiB/s
+OST 89: 0.0626253 GiB/s
+OST 79: 0.0629279 GiB/s
+OST 36: 0.0637495 GiB/s
+OST 97: 0.0639059 GiB/s
+OST 23: 0.0639844 GiB/s
+OST 26: 0.0644064 GiB/s
+OST 68: 0.0645928 GiB/s
+OST 13: 0.0649148 GiB/s
+OST 48: 0.0649688 GiB/s
+OST 92: 0.06505 GiB/s
+OST 101: 0.0652673 GiB/s
+OST 4: 0.0654862 GiB/s
+OST 55: 0.0655961 GiB/s
+OST 29: 0.0657065 GiB/s
+OST 52: 0.0657341 GiB/s
+OST 41: 0.0659561 GiB/s
+OST 18: 0.0663482 GiB/s
+OST 37: 0.0663764 GiB/s
+OST 73: 0.0666027 GiB/s
+OST 103: 0.0668306 GiB/s
+OST 28: 0.0672911 GiB/s
+OST 20: 0.0674363 GiB/s
+OST 100: 0.0675238 GiB/s
+OST 74: 0.0676993 GiB/s
+OST 10: 0.0677287 GiB/s
+OST 60: 0.0678758 GiB/s
+OST 96: 0.0680828 GiB/s
+OST 90: 0.0682613 GiB/s
+OST 44: 0.0685007 GiB/s
+OST 81: 0.0685307 GiB/s
+OST 87: 0.0686813 GiB/s
+OST 1: 0.0688629 GiB/s
+OST 7: 0.0690455 GiB/s
+OST 56: 0.0692597 GiB/s
+OST 108: 0.0694136 GiB/s
+OST 95: 0.0699731 GiB/s
+OST 104: 0.0701302 GiB/s
+OST 106: 0.0703829 GiB/s
+OST 88: 0.0707975 GiB/s
+OST 47: 0.0708296 GiB/s
+OST 65: 0.070926 GiB/s
+OST 50: 0.0710227 GiB/s
+OST 2: 0.0712494 GiB/s
+OST 34: 0.0714449 GiB/s
+OST 66: 0.071543 GiB/s
+OST 98: 0.0722042 GiB/s
+OST 57: 0.0723715 GiB/s
+OST 71: 0.0727421 GiB/s
+OST 105: 0.073014 GiB/s
+OST 12: 0.0760711 GiB/s
+OST 25: 0.0802517 GiB/s
+min:     0.0489966 GiB/s - OST 63
+Max:     0.0802517 GiB/s - OST 25
+Max/min: 1.6379
+Average: 0.066873 GiB/s
+Median:  0.0674363 - OST 20
+Standard deviation: 0.00464664 GiB/s
+Standard deviation / average %: 6.94845
+uvaretto@z123:~/projects/lustre-scratch/tmp> 
+
+uvaretto@nid00630:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/striped_10G_over_64/10Ghpc3
+File:         data/striped_10G_over_64/10Ghpc3
+File size:    10737418240
+Stripe count: 64
+Stripe size:  167772160
+# threads:    64
+Read mode: unbuffered
+Bandwidth: 3.50631 GiB/s
+
+OST 36: 0.0567151 GiB/s
+OST 12: 0.0601193 GiB/s
+OST 74: 0.0613226 GiB/s
+OST 7: 0.0622262 GiB/s
+OST 17: 0.0623006 GiB/s
+OST 53: 0.0633874 GiB/s
+OST 109: 0.0638276 GiB/s
+OST 82: 0.0639059 GiB/s
+OST 89: 0.0639844 GiB/s
+OST 29: 0.0642475 GiB/s
+OST 73: 0.0643799 GiB/s
+OST 23: 0.0645394 GiB/s
+OST 97: 0.0649688 GiB/s
+OST 98: 0.0649958 GiB/s
+OST 21: 0.0651042 GiB/s
+OST 10: 0.0652946 GiB/s
+OST 42: 0.0653219 GiB/s
+OST 13: 0.0655411 GiB/s
+OST 71: 0.0656513 GiB/s
+OST 101: 0.0657618 GiB/s
+OST 57: 0.0659561 GiB/s
+OST 106: 0.065984 GiB/s
+OST 87: 0.0661796 GiB/s
+OST 9: 0.06632 GiB/s
+OST 33: 0.0663482 GiB/s
+OST 79: 0.0665177 GiB/s
+OST 45: 0.0666311 GiB/s
+OST 90: 0.066688 GiB/s
+OST 69: 0.066745 GiB/s
+OST 41: 0.0667735 GiB/s
+OST 63: 0.0668021 GiB/s
+OST 47: 0.0668306 GiB/s
+OST 58: 0.0668592 GiB/s
+OST 1: 0.0672332 GiB/s
+OST 93: 0.0674655 GiB/s
+OST 95: 0.0675822 GiB/s
+OST 68: 0.0676993 GiB/s
+OST 65: 0.0681719 GiB/s
+OST 18: 0.0682314 GiB/s
+OST 37: 0.0682911 GiB/s
+OST 55: 0.0683508 GiB/s
+OST 34: 0.0685608 GiB/s
+OST 2: 0.0685909 GiB/s
+OST 28: 0.068621 GiB/s
+OST 61: 0.0686813 GiB/s
+OST 81: 0.069015 GiB/s
+OST 105: 0.0692291 GiB/s
+OST 85: 0.0699731 GiB/s
+OST 66: 0.0700045 GiB/s
+OST 100: 0.0700673 GiB/s
+OST 60: 0.0707334 GiB/s
+OST 52: 0.070926 GiB/s
+OST 20: 0.071055 GiB/s
+OST 49: 0.0725395 GiB/s
+OST 25: 0.0733913 GiB/s
+OST 44: 0.0734257 GiB/s
+OST 108: 0.073564 GiB/s
+OST 84: 0.0737376 GiB/s
+OST 4: 0.0738422 GiB/s
+OST 50: 0.0753739 GiB/s
+OST 92: 0.0764433 GiB/s
+OST 26: 0.0770084 GiB/s
+OST 76: 0.0792745 GiB/s
+min:     0.0567151 GiB/s - OST 36
+Max:     0.0792745 GiB/s - OST 76
+Max/min: 1.39777
+Average: 0.0676657 GiB/s
+Median:  0.0668306 - OST 47
+Standard deviation: 0.00405546 GiB/s
+Standard deviation / average %: 5.99337
+uvaretto@nid00630:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/10Ghpc0 
+File:         data/10Ghpc0
+File size:    10737418240
 Stripe count: 1
 Stripe size:  1048576
 # threads:    1
-Bandwidth: 0.323441 GiB/s
-uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/4Ghpc -t 1 -m buffered
-File:         data/4Ghpc
-File size:    4294967296
+Read mode: unbuffered
+Bandwidth: 0.681896 GiB/s
+
+uvaretto@nid00630:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/10Ghpc0 -t 32
+File:         data/10Ghpc0
+File size:    10737418240
 Stripe count: 1
 Stripe size:  1048576
-# threads:    1
-Bandwidth: 1.00604 GiB/s
-uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/4Ghpc -t 8 -m buffered
-File:         data/4Ghpc
-File size:    4294967296
+# threads:    32
+Read mode: unbuffered
+Bandwidth: 13.2626 GiB/s
+
+uvaretto@nid00630:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/16G -t 32
+File:         data/16G
+File size:    17179869184
 Stripe count: 1
 Stripe size:  1048576
+# threads:    32
+Read mode: unbuffered
+Bandwidth: 0.606221 GiB/s
+
+uvaretto@nid00630:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/16G_2G_stripes -t 32
+File:         data/16G_2G_stripes
+File size:    17179869184
+Stripe count: 8
+Stripe size:  2147483648
+# threads:    32
+Read mode: unbuffered
+Bandwidth: 2.49415 GiB/s
+
+uvaretto@nid00630:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/16G_2G_stripes
+File:         data/16G_2G_stripes
+File size:    17179869184
+Stripe count: 8
+Stripe size:  2147483648
 # threads:    8
-Bandwidth: 1.04712 GiB/s
-uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 4 -m unbuffered
-File:         data/1Ghpc
-File size:    1073741824
-Stripe count: 1
-Stripe size:  1048576
-# threads:    4
-Bandwidth: 1.0395 GiB/s
-uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 16 -m unbuffered
-File:         data/1Ghpc
-File size:    1073741824
-Stripe count: 1
-Stripe size:  1048576
-# threads:    16
-Bandwidth: 1.05485 GiB/s
-uvaretto@nid00328:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/1Ghpc -t 16 -m unbuffered
+Read mode: unbuffered
+Bandwidth: 1.64965 GiB/s
 
-
-
-
-
+OST 83: 0.206292 GiB/s
+OST 102: 0.21322 GiB/s
+OST 78: 0.248911 GiB/s
+OST 94: 0.256082 GiB/s
+OST 110: 0.260417 GiB/s
+OST 70: 0.265993 GiB/s
+OST 86: 0.293686 GiB/s
+OST 75: 0.349773 GiB/s
+min:     0.206292 GiB/s - OST 83
+Max:     0.349773 GiB/s - OST 75
+Max/min: 1.69552
+Average: 0.261797 GiB/s
+Median:  0.260417 - OST 110
+Standard deviation: 0.0424491 GiB/s
+Standard deviation / average %: 16.2145
+uvaretto@nid00630:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/16G_2G_stripes -t 32
+File:         data/16G_2G_stripes
+File size:    17179869184
+Stripe count: 8
+Stripe size:  2147483648
+# threads:    32
+Read mode: unbuffered
+Bandwidth: 3.78161 GiB/s

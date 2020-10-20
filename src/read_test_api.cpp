@@ -1,10 +1,10 @@
 // Lustre read test, single node, multiple threads
 // unbuffered (file descriptor), buffered (FILE), memory mapped (mmap)
 // Author: Ugo Varetto
-// Required patched version of lustreapi includes given non-C++ compliant
+// Required!: patched version of lustreapi includes, given non-C++ compliant
 // C declarations.
-// llapi is only used to retrieve layout in order to print information and 
-// initialize thread count.
+// llapi is only used to retrieve layout in order to print information and
+// initialise thread count.
 
 #include <fcntl.h>
 #include <lustre/lustreapi.h>
@@ -18,39 +18,148 @@
 #include <cmath>
 #include <future>
 #include <iostream>
+#include <numeric>
 #include <vector>
+#include <map>
 
 using namespace std;
 
+const uint32_t GiB = 1073741824;
+
 enum class ReadMode { Buffered, Unbuffered, MemoryMapped };
 
+struct ReadInfo {
+    size_t readBytes = 0;
+    float bandwidth = 0.f;
+};
+
+// C++20: use consteval
+constexpr float Elapsed(const chrono::duration<float>& d) {
+    return chrono::duration_cast<chrono::milliseconds>(d).count() / 1000.f;
+}
+
+// C++20: use consteval
+constexpr float GiBs(float seconds, size_t numBytes) {
+    return seconds > 0 ? (numBytes / seconds) / GiB : 0;
+}
+
+struct Config {
+    int numThreads = 0;
+    ReadMode readMode = ReadMode::Unbuffered;
+};
+
+using Clock = chrono::high_resolution_clock;
+
+template <typename SeqT>
+typename SeqT::value_type StandardDeviation(const SeqT& seq) {
+    using Value = typename SeqT::value_type;
+    const typename SeqT::size_type N = seq.size();
+    const Value sum =
+        std::accumulate(std::cbegin(seq), std::cend(seq), Value(0));
+    const Value avg = sum / N;
+    SeqT s;
+    std::transform(std::cbegin(seq), std::cend(seq), std::back_inserter(s),
+                   [avg, N](Value v) { return (v - avg) * (v - avg) / N; });
+    const Value variance =
+        std::accumulate(std::cbegin(s), std::cend(s), Value(0));
+    return std::sqrt(variance);
+}
+
+template <typename SeqT>
+typename SeqT::value_type Median(SeqT seq) {
+    nth_element(begin(seq), begin(seq) + seq.size() / 2, end(seq));
+    return seq[seq.size() / 2];
+} 
+
 //------------------------------------------------------------------------------
-size_t ReadPartFd(int fd, char* dest, size_t size, size_t offset) {
+ReadInfo ReadPartFd(const char* fname, char* dest, size_t size, size_t offset) {
+    const int flags = O_RDONLY | O_LARGEFILE;
+    const int mode = S_IRUSR;  // | S_IWUSR | S_IRGRP | S_IROTH;
+    const int fd = open(fname, flags, mode);
+    if (fd < 0) {
+        cerr << "File creation has failed, error: " << strerror(errno);
+        exit(EXIT_FAILURE);
+    }
     // problems when size > 2 GB
     const size_t maxChunkSize = 1 << 30;  // read in chunks of 1GB max
     const size_t chunks = size / maxChunkSize;
     const size_t remainder = size % maxChunkSize;
     size_t bytesRead = 0;
     size_t off = 0;
+    auto start = chrono::high_resolution_clock::now();
     for (int i = 0; i < chunks; ++i) {
         off = maxChunkSize * i;
-        bytesRead += pread(fd, dest + off, maxChunkSize, offset + off);
+        const ssize_t rb = pread(fd, dest + off, maxChunkSize, offset + off);
+        if (rb == -1) {
+            cerr << "Error reading file (pread): " << strerror(errno) << endl;
+            exit(EXIT_FAILURE);
+        }
+        bytesRead += rb;
     }
     if (remainder) {
-        bytesRead += pread(fd, dest + off, remainder, offset + off);
+        const ssize_t rb = pread(fd, dest + off, remainder, offset + off);
+        if (rb == -1) {
+            cerr << "Error reading file (pread): " << strerror(errno) << endl;
+            exit(EXIT_FAILURE);
+        }
+        bytesRead += rb;
     }
-    return bytesRead;
+    auto end = chrono::high_resolution_clock::now();
+    if (close(fd)) {
+        cerr << "Error closing file: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    return {bytesRead, GiBs(Elapsed(end - start), size)};
 }
 
-size_t ReadPartMem(const char* src, char* dest, size_t size, size_t offset) {
-    copy(src + offset, src + offset + size, dest);
-    return size;
+ReadInfo ReadPartMem(const char* fname, char* dest, size_t size,
+                     size_t offset) {
+    int fd = open(fname, O_RDONLY | O_LARGEFILE);
+    if (fd < 0) {
+        cerr << "Error cannot open input file: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    const size_t sz = min(size, size_t(4096));
+    const char* src =
+        (char*)mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, offset);
+    if (src == MAP_FAILED) {  // mmap returns (void *) -1 == MAP_FAILED
+        cerr << "Error mmap: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    auto start = chrono::high_resolution_clock::now();
+    copy(src, src + size,
+         dest);  // note: it will invoke __mempcy_avx_unaligned!
+    auto end = chrono::high_resolution_clock::now();
+    if (close(fd)) {
+        cerr << "Error closing file: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    return {size, GiBs(Elapsed(end - start), size)};
 }
 
-size_t ReadPartFile(FILE* f, char* dest, size_t size, size_t offset) {
-    if (fseek(f, offset, SEEK_SET)) return 0;
-    if (fread(dest, size, 1, f) != 1) return 0;
-    return size;
+ReadInfo ReadPartFile(const char* fname, char* dest, size_t size,
+                      size_t offset) {
+    FILE* f = fopen(fname, "rb");
+    if (!f) {
+        cerr << "Error opening file: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    if (fseek(f, offset, SEEK_SET)) {
+        cerr << "Error moving file pointer (fseek): " << strerror(errno)
+             << endl;
+        exit(EXIT_FAILURE);
+    }
+    auto start = chrono::high_resolution_clock::now();
+    if (fread(dest, 1, size, f) != size) {
+        cerr << "Error reading from file: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    auto end = chrono::high_resolution_clock::now();
+    if (fclose(f)) {
+        cerr << "Error closing file: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    return {size, GiBs(Elapsed(end - start), size)};
 }
 
 //------------------------------------------------------------------------------
@@ -63,13 +172,12 @@ size_t FileSize(const char* fname) {
     return st.st_size;
 }
 
-struct Config {
-    int numThreads = 1;
-    ReadMode readMode = ReadMode::Unbuffered;
-};
 
 void printHelp(const char* name) {
-    std::cerr << "Usage: " << name
+    std::cerr << "Compute read bandwidth, if num thrads = stripe counts per "
+                 "OST bandwidth is reported"
+              << endl
+              << "Usage: " << name
               << " <file name> [-t num threads, defaul = stripe count]"
               << " [-m read mode: buffered | unbuffered | mmap, default "
                  "unbuffered]"
@@ -81,8 +189,7 @@ Config ParseCommandLine(int argc, char** argv) {
     opterr = 0;  // extern int (from getopt)
     Config config;
 
-    while ((c = getopt(argc, argv, "t:m:h")) != -1) 
-        switch (c) {
+    while ((c = getopt(argc, argv, "t:m:h")) != -1) switch (c) {
             case 't':
                 config.numThreads = int(strtoul(optarg, nullptr, 10));
                 if (config.numThreads == 0) {
@@ -121,14 +228,8 @@ Config ParseCommandLine(int argc, char** argv) {
 }
 
 //------------------------------------------------------------------------------
-void UnbfufferedRead(const char* fname, size_t fileSize, int nthreads) {
-    const int flags = O_RDONLY | O_LARGEFILE;
-    const int mode = S_IRUSR;  // | S_IWUSR | S_IRGRP | S_IROTH;
-    const int fd = open(fname, flags, mode);
-    if (fd < 0) {
-        cerr << "file creation has failed, error: " << strerror(errno);
-        exit(EXIT_FAILURE);
-    }
+float UnbfufferedRead(const char* fname, size_t fileSize, int nthreads,
+                      vector<float>& threadBandwidth) {
     // NOTE: the following should return an error when opening a pre-existing
     // striped file.
     // const int fd = llapi_file_open(argv[1], flags, mode, stripeSize,
@@ -136,38 +237,33 @@ void UnbfufferedRead(const char* fname, size_t fileSize, int nthreads) {
     vector<char> buffer(fileSize);
     const size_t partSize = fileSize / nthreads;
     const size_t lastPartSize =
-        fileSize % nthreads == 0 ? partSize : fileSize % nthreads;
-    vector<future<size_t>> readers(nthreads);
-
+        fileSize % nthreads == 0 ? partSize : fileSize % nthreads + partSize;
+    vector<future<ReadInfo>> readers(nthreads);
+    const auto start = Clock::now();
     for (int t = 0; t != nthreads; ++t) {
         const size_t offset = partSize * t;
         const size_t sz = t != nthreads - 1 ? partSize : lastPartSize;
-        readers[t] = async(launch::async, ReadPartFd, fd,
+        readers[t] = async(launch::async, ReadPartFd, fname,
                            buffer.data() + offset, sz, offset);
     }
+    for (auto& r : readers) r.wait();
+    const auto end = Clock::now();
     size_t totalBytesRead = 0;
-    for (auto& r : readers) {
-        totalBytesRead += r.get();
-    }
-    if (close(fd)) {
-        cerr << "Error closing file: " << strerror(errno) << endl;
-        exit(EXIT_FAILURE);
+    for (int r = 0; r != readers.size(); ++r) {
+        const ReadInfo ri = readers[r].get();
+        totalBytesRead += ri.readBytes;
+        threadBandwidth[r] = ri.bandwidth;
     }
     if (totalBytesRead != fileSize) {
-        cerr << "Error reading file. File size: " << fileSize
-             << ", bytes read: " << totalBytesRead << endl;
+        cerr << "Error reading file" << endl;
         exit(EXIT_FAILURE);
     }
+
+    return GiBs(Elapsed(end - start), fileSize);
 }
 
-void BufferedRead(const char* fname, size_t fileSize, int nthreads) {
-    const int flags = O_RDONLY | O_LARGEFILE;
-    const int mode = S_IRUSR;  // | S_IWUSR | S_IRGRP | S_IROTH;
-    FILE* f = fopen(fname, "rb");
-    if (!f) {
-        cerr << "file creation has failed, error: " << strerror(errno);
-        exit(EXIT_FAILURE);
-    }
+float BufferedRead(const char* fname, size_t fileSize, int nthreads,
+                   vector<float>& threadBandwidth) {
     // NOTE: the following should return an error when opening a pre-existing
     // striped file.
     // const int fd = llapi_file_open(argv[1], flags, mode, stripeSize,
@@ -175,63 +271,59 @@ void BufferedRead(const char* fname, size_t fileSize, int nthreads) {
     vector<char> buffer(fileSize);
     const size_t partSize = fileSize / nthreads;
     const size_t lastPartSize =
-        fileSize % nthreads == 0 ? partSize : fileSize % nthreads;
-    vector<future<size_t>> readers(nthreads);
+        fileSize % nthreads == 0 ? partSize : fileSize % nthreads + partSize;
+    vector<future<ReadInfo>> readers(nthreads);
+    auto start = Clock::now();
     for (int t = 0; t != nthreads; ++t) {
         const size_t offset = partSize * t;
-        const size_t sz = t != nthreads - 1 ? partSize : lastPartSize;
-        readers[t] = async(launch::async, ReadPartFile, f,
+        const bool isLast = t == nthreads - 1;
+        const size_t sz = isLast ? lastPartSize: partSize;
+        readers[t] = async(launch::async, ReadPartFile, fname,
                            buffer.data() + offset, sz, offset);
     }
+    for (auto& r : readers) r.wait();
+    const auto end = Clock::now();
     size_t totalBytesRead = 0;
-    for (auto& r : readers) {
-        totalBytesRead += r.get();
-    }
-    if (fclose(f)) {
-        cerr << "Error closing file: " << strerror(errno) << endl;
-        exit(EXIT_FAILURE);
+    for (int r = 0; r != readers.size(); ++r) {
+        const ReadInfo ri = readers[r].get();
+        totalBytesRead += ri.readBytes;
+        threadBandwidth[r] = ri.bandwidth;
     }
     if (totalBytesRead != fileSize) {
         cerr << "Error reading file" << endl;
         exit(EXIT_FAILURE);
     }
+    return GiBs(Elapsed(end - start), fileSize);
 }
 
-void MMapRead(const char* fname, size_t fileSize, int nthreads) {
-    int fin = open(fname, O_RDONLY | O_LARGEFILE);
-    if (fin < 0) {
-        cerr << "Error cannot open input file: " << strerror(errno) << endl;
-        exit(EXIT_FAILURE);
-    }
-    const char* src =
-        (char*)mmap(NULL, fileSize, PROT_READ, MAP_PRIVATE, fin, 0);
-    if (src == MAP_FAILED) {
-        cerr << "Error mmap: " << strerror(errno) << endl;
-    }
+float MMapRead(const char* fname, size_t fileSize, int nthreads,
+               vector<float>& threadBandwidth) {
     const size_t partSize = fileSize / nthreads;
     const size_t lastPartSize =
-        fileSize % nthreads == 0 ? partSize : fileSize % nthreads;
+        fileSize % nthreads == 0 ? partSize : fileSize % nthreads + partSize;
     vector<char> buffer(fileSize);
-    vector<future<size_t>> readers(nthreads);
-    mlockall(MCL_CURRENT); //normally a bad idea: locks *all* pages at once
+    vector<future<ReadInfo>> readers(nthreads);
+    mlockall(MCL_CURRENT);  // normally a bad idea: locks *all* pages at once
+    const auto start = Clock::now();
     for (int t = 0; t != nthreads; ++t) {
         const size_t offset = partSize * t;
         const size_t sz = t != nthreads - 1 ? partSize : lastPartSize;
-        readers[t] = async(launch::async, ReadPartMem, src,
+        readers[t] = async(launch::async, ReadPartMem, fname,
                            buffer.data() + offset, sz, offset);
     }
+    for (auto& r : readers) r.wait();
+    const auto end = Clock::now();
     size_t totalBytesRead = 0;
-    for (auto& r : readers) {
-        totalBytesRead += r.get();
-    }
-    if (close(fin)) {
-        cerr << "Error closing file: " << strerror(errno) << endl;
-        exit(EXIT_FAILURE);
+    for (int r = 0; r != readers.size(); ++r) {
+        const ReadInfo ri = readers[r].get();
+        totalBytesRead += ri.readBytes;
+        threadBandwidth[r] = ri.bandwidth;
     }
     if (totalBytesRead != fileSize) {
         cerr << "Error reading file" << endl;
         exit(EXIT_FAILURE);
     }
+    return GiBs(Elapsed(end - start), fileSize);
 }
 
 //-----------------------------------------------------------------------------
@@ -269,6 +361,15 @@ int main(int argc, char* argv[]) {
              << endl;
         exit(EXIT_FAILURE);
     }
+    vector<uint64_t> osts(count);
+    for (int i = 0; i != count; ++i) {
+        uint64_t ostIndex;
+        if (llapi_layout_ost_index_get(layout, i, &ostIndex)) {
+            cerr << "Error retrieving OST index: " << strerror(errno) << endl;
+            exit(EXIT_FAILURE);
+        }
+        osts[i] = ostIndex;
+    }
     llapi_layout_free(layout);
     const int nthreads = config.numThreads ? config.numThreads : count;
     const size_t fileSize = FileSize(fileName);
@@ -277,35 +378,64 @@ int main(int argc, char* argv[]) {
     cout << "Stripe count: " << count << endl;
     cout << "Stripe size:  " << size << endl;
     cout << "# threads:    " << nthreads << endl;
+
     const unsigned long long stripeSize = size;
     const unsigned long long stripeCount = count;
-    const unsigned long long stripeOffset = 0;
-    const unsigned long long stripePattern = 0;
 
-    const auto start = chrono::high_resolution_clock::now();
+    vector<float> threadBandwidth(nthreads);
+    float bw = 0;
     switch (readMode) {
         case ReadMode::Buffered:
-            BufferedRead(fileName, fileSize, nthreads);
+            cout << "Read mode: buffered" << endl;
+            bw = BufferedRead(fileName, fileSize, nthreads, threadBandwidth);
             break;
         case ReadMode::Unbuffered:
-            UnbfufferedRead(fileName, fileSize, nthreads);
+            cout << "Read mode: unbuffered" << endl;
+            bw = UnbfufferedRead(fileName, fileSize, nthreads, threadBandwidth);
             break;
         case ReadMode::MemoryMapped:
-            MMapRead(fileName, fileSize, nthreads);
+            cout << "Read mode: memory mapped" << endl;
+            bw = MMapRead(fileName, fileSize, nthreads, threadBandwidth);
             break;
         default:
             break;
     }
-    const auto end = chrono::high_resolution_clock::now();
-    const float elapsed =
-        chrono::duration_cast<chrono::milliseconds>(end - start).count() /
-        1000.f;
-    if (elapsed == 0) {
+    if (bw == 0) {
         cout << "Elapsed time < 1ms " << endl;
         return 0;
     }
-    const uint32_t GiB = 1073741824;
-    const float bw = (float(fileSize) / elapsed) / GiB;  // Gi bytes/s
-    cout << "Bandwidth: " << bw << " GiB/s" << endl;
+    
+    cout << "Bandwidth: " << bw << " GiB/s" << endl << endl;
+    if (nthreads == stripeCount && stripeCount > 1) {
+        map<int, float> ost2bw;
+        map<float, int> bw2ost;
+        for (int i = 0; i != nthreads; ++i) {
+            ost2bw.insert({osts[i], threadBandwidth[i]});
+            bw2ost.insert({threadBandwidth[i], osts[i]});
+        }
+        for(const auto& kv: bw2ost) {
+            cout << "OST " << kv.second << ": " << kv.first << " GiB/s" << endl;
+        }
+        const float M =
+            *max_element(std::begin(threadBandwidth), std::end(threadBandwidth));
+        const float m =
+            *min_element(std::begin(threadBandwidth), std::end(threadBandwidth));
+        const float avg = accumulate(std::begin(threadBandwidth),
+                                     std::end(threadBandwidth), 0.f) /
+                          threadBandwidth.size();
+        const float stdev = StandardDeviation(threadBandwidth);
+        const float median = Median(threadBandwidth);
+        //note case of multiple OSTs with same bandwidth not handled, would
+        //require storing values in map as vectors instead of plain floats,
+        //but not really needed since OSTs are printed from slower to faster 
+        cout << "min:     " << m << " GiB/s" << " - OST " << bw2ost[m] << endl;
+        cout << "Max:     " << M << " GiB/s" << " - OST " << bw2ost[M] << endl;
+        cout << "Max/min: " << M / m << endl;
+        cout << "Average: " << avg << " GiB/s" << endl;
+        cout << "Median:  " << median << " - OST " << bw2ost[median] << endl;
+        cout << "Standard deviation: " << stdev << " GiB/s" << endl;
+        cout << "Standard deviation / average %: " << (100 * stdev / avg)
+             << endl;
+    }
     return 0;
 }
