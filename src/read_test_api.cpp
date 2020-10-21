@@ -480,7 +480,7 @@ int main(int argc, char* argv[]) {
         cout << "Average: " << avg << " GiB/s" << endl;
         cout << "Median:  " << median << " - OST " << bw2ost[median] << endl;
         cout << "Standard deviation: " << stdev << " GiB/s" << endl;
-        cout << "Standard deviation / average %: " << (100 * stdev / avg)
+        cout << "Standard deviation / average: " << (100 * stdev / avg) << " %"
              << endl;
     }
     return 0;

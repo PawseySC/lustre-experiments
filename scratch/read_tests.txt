@@ -664,3 +664,12 @@ Stripe size:  1048576
 # threads:    1
 Read mode: unbuffered
 Bandwidth: 0.61013 GiB/s
+
+uvaretto@nid00025:~/projects/lustre-scratch/tmp> srun ./bin/release/read_test_api data/10Ghpc0 -t 64
+File:         data/10Ghpc0
+File size:    10737418240
+Stripe count: 1
+Stripe size:  1048576
+# threads:    64
+Read mode: unbuffered
+Bandwidth: 0.490184 GiB/s
