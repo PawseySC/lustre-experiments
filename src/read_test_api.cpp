@@ -18,13 +18,14 @@
 #include <cmath>
 #include <future>
 #include <iostream>
+#include <map>
 #include <numeric>
 #include <vector>
-#include <map>
 
 using namespace std;
 
 const uint32_t GiB = 1073741824;
+constexpr float us = 1E6;
 
 enum class ReadMode { Buffered, Unbuffered, MemoryMapped };
 
@@ -35,7 +36,7 @@ struct ReadInfo {
 
 // C++20: use consteval
 constexpr float Elapsed(const chrono::duration<float>& d) {
-    return chrono::duration_cast<chrono::milliseconds>(d).count() / 1000.f;
+    return chrono::duration_cast<chrono::microseconds>(d).count() / us;
 }
 
 // C++20: use consteval
@@ -46,6 +47,8 @@ constexpr float GiBs(float seconds, size_t numBytes) {
 struct Config {
     int numThreads = 0;
     ReadMode readMode = ReadMode::Unbuffered;
+    size_t partNum = 0;
+    size_t numParts = 1;
 };
 
 using Clock = chrono::high_resolution_clock;
@@ -69,7 +72,7 @@ template <typename SeqT>
 typename SeqT::value_type Median(SeqT seq) {
     nth_element(begin(seq), begin(seq) + seq.size() / 2, end(seq));
     return seq[seq.size() / 2];
-} 
+}
 
 //------------------------------------------------------------------------------
 ReadInfo ReadPartFd(const char* fname, char* dest, size_t size, size_t offset) {
@@ -120,8 +123,7 @@ ReadInfo ReadPartMem(const char* fname, char* dest, size_t size,
         exit(EXIT_FAILURE);
     }
     const size_t sz = min(size, size_t(4096));
-    const char* src =
-        (char*)mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, offset);
+    const char* src = (char*)mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, offset);
     if (src == MAP_FAILED) {  // mmap returns (void *) -1 == MAP_FAILED
         cerr << "Error mmap: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
@@ -172,13 +174,16 @@ size_t FileSize(const char* fname) {
     return st.st_size;
 }
 
-
 void printHelp(const char* name) {
-    std::cerr << "Compute read bandwidth, if num thrads = stripe counts per "
-                 "OST bandwidth is reported"
+    std::cerr << "Compute read bandwidth, if num threads = stripe counts per "
+                 "OST bandwidth is reported. Using -p and -N parameters "
+                 "it is possible to have a process read only a subregion of "
+                 "the file. E.g. "
               << endl
+              << name << " -p $SLURM_PROCID -N $SLURM_NUMTASKS" << endl
               << "Usage: " << name
-              << " <file name> [-t num threads, defaul = stripe count]"
+              << " <file name> [-t num threads, defaul = stripe count] "
+                 " [-p part number] [-N number of parts]"
               << " [-m read mode: buffered | unbuffered | mmap, default "
                  "unbuffered]"
               << std::endl;
@@ -189,7 +194,7 @@ Config ParseCommandLine(int argc, char** argv) {
     opterr = 0;  // extern int (from getopt)
     Config config;
 
-    while ((c = getopt(argc, argv, "t:m:h")) != -1) switch (c) {
+    while ((c = getopt(argc, argv, "t:m:pNh")) != -1) switch (c) {
             case 't':
                 config.numThreads = int(strtoul(optarg, nullptr, 10));
                 if (config.numThreads == 0) {
@@ -211,6 +216,20 @@ Config ParseCommandLine(int argc, char** argv) {
                     exit(EXIT_FAILURE);
                 }
                 break;
+            case 'p':
+                config.partNum = int(strtoul(optarg, nullptr, 10));
+                if (errno == ERANGE) {
+                    cerr << "Invalid part number" << endl;
+                    exit(EXIT_FAILURE);
+                }
+                break;
+            case 'N':
+                config.numParts = int(strtoul(optarg, nullptr, 10));
+                if (errno == ERANGE) {
+                    cerr << "Invalid number of parts" << endl;
+                    exit(EXIT_FAILURE);
+                }
+                break;
             case 'h':
                 printHelp(argv[0]);
                 exit(EXIT_SUCCESS);
@@ -229,7 +248,7 @@ Config ParseCommandLine(int argc, char** argv) {
 
 //------------------------------------------------------------------------------
 float UnbfufferedRead(const char* fname, size_t fileSize, int nthreads,
-                      vector<float>& threadBandwidth) {
+                      size_t globalOffset, vector<float>& threadBandwidth) {
     // NOTE: the following should return an error when opening a pre-existing
     // striped file.
     // const int fd = llapi_file_open(argv[1], flags, mode, stripeSize,
@@ -244,7 +263,7 @@ float UnbfufferedRead(const char* fname, size_t fileSize, int nthreads,
         const size_t offset = partSize * t;
         const size_t sz = t != nthreads - 1 ? partSize : lastPartSize;
         readers[t] = async(launch::async, ReadPartFd, fname,
-                           buffer.data() + offset, sz, offset);
+                           buffer.data() + offset, sz, offset + globalOffset);
     }
     for (auto& r : readers) r.wait();
     const auto end = Clock::now();
@@ -263,7 +282,7 @@ float UnbfufferedRead(const char* fname, size_t fileSize, int nthreads,
 }
 
 float BufferedRead(const char* fname, size_t fileSize, int nthreads,
-                   vector<float>& threadBandwidth) {
+                   size_t globalOffset, vector<float>& threadBandwidth) {
     // NOTE: the following should return an error when opening a pre-existing
     // striped file.
     // const int fd = llapi_file_open(argv[1], flags, mode, stripeSize,
@@ -277,9 +296,9 @@ float BufferedRead(const char* fname, size_t fileSize, int nthreads,
     for (int t = 0; t != nthreads; ++t) {
         const size_t offset = partSize * t;
         const bool isLast = t == nthreads - 1;
-        const size_t sz = isLast ? lastPartSize: partSize;
+        const size_t sz = isLast ? lastPartSize : partSize;
         readers[t] = async(launch::async, ReadPartFile, fname,
-                           buffer.data() + offset, sz, offset);
+                           buffer.data() + offset, sz, offset + globalOffset);
     }
     for (auto& r : readers) r.wait();
     const auto end = Clock::now();
@@ -297,19 +316,23 @@ float BufferedRead(const char* fname, size_t fileSize, int nthreads,
 }
 
 float MMapRead(const char* fname, size_t fileSize, int nthreads,
-               vector<float>& threadBandwidth) {
+               size_t globalOffset, vector<float>& threadBandwidth) {
     const size_t partSize = fileSize / nthreads;
     const size_t lastPartSize =
         fileSize % nthreads == 0 ? partSize : fileSize % nthreads + partSize;
     vector<char> buffer(fileSize);
     vector<future<ReadInfo>> readers(nthreads);
-    mlockall(MCL_CURRENT);  // normally a bad idea: locks *all* pages at once
+    if (mlockall(MCL_CURRENT)) {  // normally a bad idea: locks *all* process
+                                  // memory at once
+        cerr << "Error locking memory (mlockall): " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
     const auto start = Clock::now();
     for (int t = 0; t != nthreads; ++t) {
         const size_t offset = partSize * t;
         const size_t sz = t != nthreads - 1 ? partSize : lastPartSize;
         readers[t] = async(launch::async, ReadPartMem, fname,
-                           buffer.data() + offset, sz, offset);
+                           buffer.data() + offset, sz, offset + globalOffset);
     }
     for (auto& r : readers) r.wait();
     const auto end = Clock::now();
@@ -337,9 +360,9 @@ int main(int argc, char* argv[]) {
     const char* fileName = argv[1];
     Config config = ParseCommandLine(argc, argv);
     const ReadMode readMode = config.readMode;
-    // To be used later to allow for multi-node processing:
-    // size_t offset; //starting point
-    // float percentage; //part of file to read, 1 all, 0.1 10%
+    const size_t partNum = config.partNum;
+    const size_t numParts = config.numParts;
+
     llapi_layout* layout = llapi_layout_get_by_path(fileName, 0);
 
     if (!layout) {
@@ -348,21 +371,21 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
     // get layout attributes
-    uint64_t size = 0;
-    if (llapi_layout_stripe_size_get(layout, &size)) {
+    uint64_t stripeSize = 0;
+    if (llapi_layout_stripe_size_get(layout, &stripeSize)) {
         cerr << "Error retrieving stripe size information: " << strerror(errno)
              << endl;
         exit(EXIT_FAILURE);
     }
 
-    uint64_t count = 0;
-    if (llapi_layout_stripe_count_get(layout, &count)) {
+    uint64_t stripeCount = 0;
+    if (llapi_layout_stripe_count_get(layout, &stripeCount)) {
         cerr << "Error retrieving stripe count information: " << strerror(errno)
              << endl;
         exit(EXIT_FAILURE);
     }
-    vector<uint64_t> osts(count);
-    for (int i = 0; i != count; ++i) {
+    vector<uint64_t> osts(stripeCount);
+    for (int i = 0; i != stripeCount; ++i) {
         uint64_t ostIndex;
         if (llapi_layout_ost_index_get(layout, i, &ostIndex)) {
             cerr << "Error retrieving OST index: " << strerror(errno) << endl;
@@ -371,31 +394,48 @@ int main(int argc, char* argv[]) {
         osts[i] = ostIndex;
     }
     llapi_layout_free(layout);
-    const int nthreads = config.numThreads ? config.numThreads : count;
-    const size_t fileSize = FileSize(fileName);
-    cout << "File:         " << fileName << endl;
-    cout << "File size:    " << fileSize << endl;
-    cout << "Stripe count: " << count << endl;
-    cout << "Stripe size:  " << size << endl;
-    cout << "# threads:    " << nthreads << endl;
 
-    const unsigned long long stripeSize = size;
-    const unsigned long long stripeCount = count;
+    const size_t fileSize = FileSize(fileName);
+    const size_t globalOffset = partNum * fileSize / numParts;
+    const size_t partSize = fileSize % numParts
+                                ? fileSize % numParts + fileSize / numParts
+                                : fileSize / numParts;
+
+    // if process read only a subregion of the files we need to conpute
+    // how many stripes are included in the region
+    if (numParts > 1) {
+        const size_t numStripes =
+            partSize / stripeSize + (partSize % stripeSize ? 1 : 0);
+        stripeCount = numStripes;
+    }
+
+    const int nthreads = config.numThreads ? config.numThreads : stripeCount;
+
+    if (numParts == 1) {
+        cout << "File:         " << fileName << endl;
+        cout << "File size:    " << fileSize << endl;
+        cout << "Stripe count: " << stripeCount << endl;
+        cout << "Stripe size:  " << stripeSize << endl;
+        cout << "# threads:    " << nthreads << endl;
+    }
 
     vector<float> threadBandwidth(nthreads);
     float bw = 0;
     switch (readMode) {
         case ReadMode::Buffered:
             cout << "Read mode: buffered" << endl;
-            bw = BufferedRead(fileName, fileSize, nthreads, threadBandwidth);
+            bw = BufferedRead(fileName, partSize, nthreads, globalOffset,
+                              threadBandwidth);
             break;
         case ReadMode::Unbuffered:
             cout << "Read mode: unbuffered" << endl;
-            bw = UnbfufferedRead(fileName, fileSize, nthreads, threadBandwidth);
+            bw = UnbfufferedRead(fileName, partSize, nthreads, globalOffset,
+                                 threadBandwidth);
             break;
         case ReadMode::MemoryMapped:
             cout << "Read mode: memory mapped" << endl;
-            bw = MMapRead(fileName, fileSize, nthreads, threadBandwidth);
+            bw = MMapRead(fileName, partSize, nthreads, globalOffset,
+                          threadBandwidth);
             break;
         default:
             break;
@@ -404,32 +444,38 @@ int main(int argc, char* argv[]) {
         cout << "Elapsed time < 1ms " << endl;
         return 0;
     }
-    
-    cout << "Bandwidth: " << bw << " GiB/s" << endl << endl;
-    if (nthreads == stripeCount && stripeCount > 1) {
+    if (numParts == 1)
+        cout << "Bandwidth: " << bw << " GiB/s" << endl << endl;
+    else
+        cout << bw << endl;  // when multiple process are invoked only print
+                             // the bandwidth number to make it easy to parse
+                             // output
+    if (nthreads == stripeCount && stripeCount > 1 && numParts == 1) {
         map<int, float> ost2bw;
         map<float, int> bw2ost;
         for (int i = 0; i != nthreads; ++i) {
             ost2bw.insert({osts[i], threadBandwidth[i]});
             bw2ost.insert({threadBandwidth[i], osts[i]});
         }
-        for(const auto& kv: bw2ost) {
+        for (const auto& kv : bw2ost) {
             cout << "OST " << kv.second << ": " << kv.first << " GiB/s" << endl;
         }
-        const float M =
-            *max_element(std::begin(threadBandwidth), std::end(threadBandwidth));
-        const float m =
-            *min_element(std::begin(threadBandwidth), std::end(threadBandwidth));
+        const float M = *max_element(std::begin(threadBandwidth),
+                                     std::end(threadBandwidth));
+        const float m = *min_element(std::begin(threadBandwidth),
+                                     std::end(threadBandwidth));
         const float avg = accumulate(std::begin(threadBandwidth),
                                      std::end(threadBandwidth), 0.f) /
                           threadBandwidth.size();
         const float stdev = StandardDeviation(threadBandwidth);
         const float median = Median(threadBandwidth);
-        //note case of multiple OSTs with same bandwidth not handled, would
-        //require storing values in map as vectors instead of plain floats,
-        //but not really needed since OSTs are printed from slower to faster 
-        cout << "min:     " << m << " GiB/s" << " - OST " << bw2ost[m] << endl;
-        cout << "Max:     " << M << " GiB/s" << " - OST " << bw2ost[M] << endl;
+        // note: case of multiple OSTs with same bandwidth not handled, would
+        // require storing values in map as vectors instead of plain floats,
+        // but not really needed since OSTs are printed from slower to faster
+        cout << "min:     " << m << " GiB/s"
+             << " - OST " << bw2ost[m] << endl;
+        cout << "Max:     " << M << " GiB/s"
+             << " - OST " << bw2ost[M] << endl;
         cout << "Max/min: " << M / m << endl;
         cout << "Average: " << avg << " GiB/s" << endl;
         cout << "Median:  " << median << " - OST " << bw2ost[median] << endl;
