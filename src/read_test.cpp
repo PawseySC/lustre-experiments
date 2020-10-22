@@ -49,6 +49,7 @@ struct Config {
     ReadMode readMode = ReadMode::Unbuffered;
     size_t partNum = 0;
     size_t numParts = 1;
+    size_t partFraction = 1;  // read 1/stripeFraction bytes from each stripe
 };
 
 using Clock = chrono::high_resolution_clock;
@@ -132,7 +133,7 @@ ReadInfo ReadPartMem(const char* fname, char* dest, size_t size,
     copy(src, src + size,
          dest);  // note: it will invoke __mempcy_avx_unaligned!
     auto end = chrono::high_resolution_clock::now();
-    if(munmap(src, sz)) {
+    if (munmap(src, sz)) {
         cerr << "Error unmapping memory: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
@@ -172,25 +173,28 @@ ReadInfo ReadPartFile(const char* fname, char* dest, size_t size,
 size_t FileSize(const char* fname) {
     struct stat st;
     if (stat(fname, &st)) {
-        cerr << "Error retrieveing file size: " << strerror(errno) << endl;
+        cerr << "Error retrieving file size: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
     return st.st_size;
 }
 
 void printHelp(const char* name) {
-    std::cerr << "Compute read bandwidth, if num threads = stripe counts per "
-                 "OST bandwidth is reported. Using -p and -N parameters "
-                 "it is possible to have a process read only a subregion of "
-                 "the file. E.g. "
-              << endl
-              << name << " -p $SLURM_PROCID -N $SLURM_NUMTASKS" << endl
-              << "Usage: " << name
-              << " <file name> [-t num threads, defaul = stripe count] "
-                 " [-p part number] [-N number of parts]"
-              << " [-m read mode: buffered | unbuffered | mmap, default "
-                 "unbuffered]"
-              << std::endl;
+    std::cerr
+        << "Compute read bandwidth, if num threads = stripe counts per "
+           "OST bandwidth is reported. Using -p and -N parameters "
+           "it is possible to have a process read only a subregion of "
+           "the file. E.g. "
+        << endl
+        << name << " -p $SLURM_PROCID -N $SLURM_NUMTASKS" << endl
+        << "Usage: " << name
+        << " <file name> [-t num threads, defaul = stripe count] "
+           " [-p part number] [-N number of parts]"
+        << " [-m read mode: buffered | unbuffered | mmap, default "
+           "unbuffered]"
+        << " [-f per-thread fraction to read: 1 / fraction X part size\n"
+        << "e.g. -f 1/3 --> read one third of data assigned to each thread"
+        << std::endl;
 };
 
 Config ParseCommandLine(int argc, char** argv) {
@@ -198,7 +202,7 @@ Config ParseCommandLine(int argc, char** argv) {
     opterr = 0;  // extern int (from getopt)
     Config config;
 
-    while ((c = getopt(argc, argv, "t:m:pNh")) != -1) switch (c) {
+    while ((c = getopt(argc, argv, "f:t:m:pNh")) != -1) switch (c) {
             case 't':
                 config.numThreads = int(strtoul(optarg, nullptr, 10));
                 if (config.numThreads == 0) {
@@ -234,6 +238,13 @@ Config ParseCommandLine(int argc, char** argv) {
                     exit(EXIT_FAILURE);
                 }
                 break;
+            case 'f':
+                config.partFraction = int(strtoul(optarg, nullptr, 10));
+                if (errno == ERANGE) {
+                    cerr << "Invalid stripe fraction" << endl;
+                    exit(EXIT_FAILURE);
+                }
+                break;
             case 'h':
                 printHelp(argv[0]);
                 exit(EXIT_SUCCESS);
@@ -252,13 +263,18 @@ Config ParseCommandLine(int argc, char** argv) {
 
 //------------------------------------------------------------------------------
 float UnbfufferedRead(const char* fname, size_t fileSize, int nthreads,
-                      size_t globalOffset, vector<float>& threadBandwidth) {
+                      size_t globalOffset, vector<float>& threadBandwidth,
+                      size_t partFraction) {
     // NOTE: the following should return an error when opening a pre-existing
     // striped file.
     // const int fd = llapi_file_open(argv[1], flags, mode, stripeSize,
     //                               stripeOffset, stripeCount, stripePattern);
     vector<char> buffer(fileSize);
     const size_t partSize = fileSize / nthreads;
+    if (partFraction > partSize || partFraction == 0) {
+        cerr << "Invalid part fraction" << endl;
+        exit(EXIT_FAILURE);
+    }
     const size_t lastPartSize =
         fileSize % nthreads == 0 ? partSize : fileSize % nthreads + partSize;
     vector<future<ReadInfo>> readers(nthreads);
@@ -266,33 +282,34 @@ float UnbfufferedRead(const char* fname, size_t fileSize, int nthreads,
     for (int t = 0; t != nthreads; ++t) {
         const size_t offset = partSize * t;
         const size_t sz = t != nthreads - 1 ? partSize : lastPartSize;
-        readers[t] = async(launch::async, ReadPartFd, fname,
-                           buffer.data() + offset, sz, offset + globalOffset);
+        readers[t] =
+            async(launch::async, ReadPartFd, fname, buffer.data() + offset,
+                  sz / partFraction, offset + globalOffset);
     }
     for (auto& r : readers) r.wait();
     const auto end = Clock::now();
     size_t totalBytesRead = 0;
     for (int r = 0; r != readers.size(); ++r) {
         const ReadInfo ri = readers[r].get();
-        totalBytesRead += ri.readBytes;
+        totalBytesRead += ri.readBytes;  // not used
         threadBandwidth[r] = ri.bandwidth;
     }
-    if (totalBytesRead != fileSize) {
-        cerr << "Error reading file" << endl;
-        exit(EXIT_FAILURE);
-    }
-
-    return GiBs(Elapsed(end - start), fileSize);
+    return GiBs(Elapsed(end - start), fileSize / partFraction);
 }
 
 float BufferedRead(const char* fname, size_t fileSize, int nthreads,
-                   size_t globalOffset, vector<float>& threadBandwidth) {
+                   size_t globalOffset, vector<float>& threadBandwidth,
+                   size_t partFraction) {
     // NOTE: the following should return an error when opening a pre-existing
     // striped file.
     // const int fd = llapi_file_open(argv[1], flags, mode, stripeSize,
     //                               stripeOffset, stripeCount, stripePattern);
     vector<char> buffer(fileSize);
     const size_t partSize = fileSize / nthreads;
+    if (partFraction > partSize || partFraction == 0) {
+        cerr << "Invalid part fraction" << endl;
+        exit(EXIT_FAILURE);
+    }
     const size_t lastPartSize =
         fileSize % nthreads == 0 ? partSize : fileSize % nthreads + partSize;
     vector<future<ReadInfo>> readers(nthreads);
@@ -301,27 +318,29 @@ float BufferedRead(const char* fname, size_t fileSize, int nthreads,
         const size_t offset = partSize * t;
         const bool isLast = t == nthreads - 1;
         const size_t sz = isLast ? lastPartSize : partSize;
-        readers[t] = async(launch::async, ReadPartFile, fname,
-                           buffer.data() + offset, sz, offset + globalOffset);
+        readers[t] =
+            async(launch::async, ReadPartFile, fname, buffer.data() + offset,
+                  sz / partFraction, offset + globalOffset);
     }
     for (auto& r : readers) r.wait();
     const auto end = Clock::now();
     size_t totalBytesRead = 0;
     for (int r = 0; r != readers.size(); ++r) {
         const ReadInfo ri = readers[r].get();
-        totalBytesRead += ri.readBytes;
+        totalBytesRead += ri.readBytes;  // not used
         threadBandwidth[r] = ri.bandwidth;
     }
-    if (totalBytesRead != fileSize) {
-        cerr << "Error reading file" << endl;
-        exit(EXIT_FAILURE);
-    }
-    return GiBs(Elapsed(end - start), fileSize);
+    return GiBs(Elapsed(end - start), fileSize / partFraction);
 }
 
 float MMapRead(const char* fname, size_t fileSize, int nthreads,
-               size_t globalOffset, vector<float>& threadBandwidth) {
+               size_t globalOffset, vector<float>& threadBandwidth,
+               size_t partFraction) {
     const size_t partSize = fileSize / nthreads;
+    if (partFraction > partSize || partFraction == 0) {
+        cerr << "Invalid part fraction" << endl;
+        exit(EXIT_FAILURE);
+    }
     const size_t lastPartSize =
         fileSize % nthreads == 0 ? partSize : fileSize % nthreads + partSize;
     vector<char> buffer(fileSize);
@@ -335,29 +354,27 @@ float MMapRead(const char* fname, size_t fileSize, int nthreads,
     for (int t = 0; t != nthreads; ++t) {
         const size_t offset = partSize * t;
         const size_t sz = t != nthreads - 1 ? partSize : lastPartSize;
-        readers[t] = async(launch::async, ReadPartMem, fname,
-                           buffer.data() + offset, sz, offset + globalOffset);
+        readers[t] =
+            async(launch::async, ReadPartMem, fname, buffer.data() + offset,
+                  sz / partFraction, offset + globalOffset);
     }
     for (auto& r : readers) r.wait();
     const auto end = Clock::now();
     size_t totalBytesRead = 0;
     for (int r = 0; r != readers.size(); ++r) {
         const ReadInfo ri = readers[r].get();
-        totalBytesRead += ri.readBytes;
+        totalBytesRead += ri.readBytes;  // not used
         threadBandwidth[r] = ri.bandwidth;
     }
-    if (totalBytesRead != fileSize) {
-        cerr << "Error reading file" << endl;
+    if (munlockall()) {
+        cerr << "Error unlocking memory (mlunlockall): " << strerror(errno)
+             << endl;
         exit(EXIT_FAILURE);
     }
-    if(munlockall()) {
-        cerr << "Error unlocking memory (mlunlockall): " << strerror(errno) << endl;
-        exit(EXIT_FAILURE);
-    }
-    return GiBs(Elapsed(end - start), fileSize);
+    return GiBs(Elapsed(end - start), fileSize / partFraction);
 }
 
-//-----------------------------------------------------------------------------
+//------------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         printHelp(argv[0]);
@@ -408,7 +425,7 @@ int main(int argc, char* argv[]) {
     const size_t partSize = fileSize % numParts
                                 ? fileSize % numParts + fileSize / numParts
                                 : fileSize / numParts;
-
+    // size_t partSize = stripeCount;
     // if process read only a subregion of the files we need to conpute
     // how many stripes are included in the region
     if (numParts > 1) {
@@ -425,6 +442,11 @@ int main(int argc, char* argv[]) {
         cout << "Stripe count: " << stripeCount << endl;
         cout << "Stripe size:  " << stripeSize << endl;
         cout << "# threads:    " << nthreads << endl;
+        cout << "Read factor:  "
+             << "1/" << config.partFraction << " ~"
+             << (fileSize / config.partFraction) << " bytes "
+             << (fileSize / config.partFraction) / nthreads
+             << " bytes per thread" << endl;
     }
 
     vector<float> threadBandwidth(nthreads);
@@ -433,17 +455,17 @@ int main(int argc, char* argv[]) {
         case ReadMode::Buffered:
             cout << "Read mode: buffered" << endl;
             bw = BufferedRead(fileName, partSize, nthreads, globalOffset,
-                              threadBandwidth);
+                              threadBandwidth, config.partFraction);
             break;
         case ReadMode::Unbuffered:
             cout << "Read mode: unbuffered" << endl;
             bw = UnbfufferedRead(fileName, partSize, nthreads, globalOffset,
-                                 threadBandwidth);
+                                 threadBandwidth, config.partFraction);
             break;
         case ReadMode::MemoryMapped:
             cout << "Read mode: memory mapped" << endl;
             bw = MMapRead(fileName, partSize, nthreads, globalOffset,
-                          threadBandwidth);
+                          threadBandwidth, config.partFraction);
             break;
         default:
             break;
