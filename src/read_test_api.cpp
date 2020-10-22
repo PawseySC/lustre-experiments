@@ -122,8 +122,8 @@ ReadInfo ReadPartMem(const char* fname, char* dest, size_t size,
         cerr << "Error cannot open input file: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
-    const size_t sz = min(size, size_t(4096));
-    const char* src = (char*)mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, offset);
+    const size_t sz = max(size, size_t(4096));
+    char* src = (char*)mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, offset);
     if (src == MAP_FAILED) {  // mmap returns (void *) -1 == MAP_FAILED
         cerr << "Error mmap: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
@@ -132,6 +132,10 @@ ReadInfo ReadPartMem(const char* fname, char* dest, size_t size,
     copy(src, src + size,
          dest);  // note: it will invoke __mempcy_avx_unaligned!
     auto end = chrono::high_resolution_clock::now();
+    if(munmap(src, sz)) {
+        cerr << "Error unmapping memory: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
     if (close(fd)) {
         cerr << "Error closing file: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
@@ -344,6 +348,10 @@ float MMapRead(const char* fname, size_t fileSize, int nthreads,
     }
     if (totalBytesRead != fileSize) {
         cerr << "Error reading file" << endl;
+        exit(EXIT_FAILURE);
+    }
+    if(munlockall()) {
+        cerr << "Error unlocking memory (mlunlockall): " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
     return GiBs(Elapsed(end - start), fileSize);
