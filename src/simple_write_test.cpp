@@ -1,11 +1,11 @@
 // Author: Ugo Varetto
-// simple parallel read test: each thread reads from a different location
-//                            in the input file, in case the executable is
+// simple parallel write test: each thread writes to a different location
+//                            in the output file, in case the executable is
 //                            invoked within slurm it will distribute the
 //                            computation across all processes automatically,
-//                            with each process reading a different sub-region
+//                            with each process writing a different sub-region
 //                            of the file
-// compilation: g++ -pthread simple_read_test.cpp -o simple_read_test
+// compilation: g++ -pthread simple_write_test.cpp -o simple_write_test
 //
 // Lustre:
 //
@@ -18,24 +18,6 @@
 // note: when data validation is required /dev/urandom should be used
 // instead
 
-// uvaretto@zeus-1:~/projects/lustre-scratch/tmp> time srun -n 4 -N 4 --cpus-per-task 16 --mem 32000 -p copyq ./rt data/striped_10G_over_64/10Ghpc3 16
-// srun: job 4866510 queued and waiting for resources
-// srun: job 4866510 has been allocated resources
-// Process: 2 Bandwidth: 5.00696 GiB/s
-// Elapsed time: 1.99722 seconds
-//
-// Process: 1 Bandwidth: 4.84904 GiB/s
-// Elapsed time: 2.06227 seconds
-//
-// Process: 3 Bandwidth: 4.61036 GiB/s
-// Elapsed time: 2.16903 seconds
-//
-// Process: 0 Bandwidth: 4.82129 GiB/s
-// Elapsed time: 2.07414 seconds
-//
-// real    0m3.469s
-// user    0m0.013s
-// sys     0m0.008s
 
 #include <sys/stat.h>
 
@@ -55,9 +37,9 @@ using namespace std;
 #endif
 
 //------------------------------------------------------------------------------
-void ReadPart(const char* fname, char* dest, size_t size, size_t offset) {
+void WritePart(const char* fname, char* src, size_t size, size_t offset) {
     // unbuffered open/pread/close preferred
-    FILE* f = fopen(fname, "rb");
+    FILE* f = fopen(fname, "wb");
     if (!f) {
         cerr << "Error opening file: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
@@ -67,7 +49,7 @@ void ReadPart(const char* fname, char* dest, size_t size, size_t offset) {
              << endl;
         exit(EXIT_FAILURE);
     }
-    if (fread(dest, 1, size, f) != size) {
+    if (fwrite(src, 1, size, f) != size) {
         cerr << "Error reading from file: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
@@ -78,33 +60,23 @@ void ReadPart(const char* fname, char* dest, size_t size, size_t offset) {
 }
 
 //------------------------------------------------------------------------------
-size_t FileSize(const char* fname) {
-    struct stat st;
-    if (stat(fname, &st)) {
-        cerr << "Error retrieving file size: " << strerror(errno) << endl;
-        exit(EXIT_FAILURE);
-    }
-    return st.st_size;
-}
-
-//------------------------------------------------------------------------------
-double BufferedRead(const char* fname, size_t size, int nthreads,
-                    size_t globalOffset) {
+double BufferedWrite(const char* fname, size_t size, int nthreads,
+                     size_t globalOffset) {
     vector<char> buffer(size);
     const size_t partSize = size / nthreads;
     const size_t lastPartSize =
         size % nthreads == 0 ? partSize : size % nthreads + partSize;
-    vector<future<void>> readers(nthreads);
+    vector<future<void>> writers(nthreads);
     using Clock = chrono::high_resolution_clock;
     auto start = Clock::now();
     for (int t = 0; t != nthreads; ++t) {
         const size_t offset = partSize * t;
         const bool isLast = t == nthreads - 1;
         const size_t sz = isLast ? lastPartSize : partSize;
-        readers[t] = async(launch::async, ReadPart, fname,
+        writers[t] = async(launch::async, WritePart, fname,
                            buffer.data() + offset, sz, offset + globalOffset);
     }
-    for (auto& r : readers) r.wait();
+    for (auto& w : writers) w.wait();
     const auto end = Clock::now();
     return chrono::duration_cast<chrono::nanoseconds>(end - start).count() /
            1E9;
@@ -112,16 +84,20 @@ double BufferedRead(const char* fname, size_t size, int nthreads,
 
 //-----------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
-    if (argc != 3) {
+    if (argc != 4) {
         cerr << "Usage: " << argv[0]
-             << " <file name> <number of threads per process>" << endl
+             << " <file name> <number of threads per process> <file size>" << endl
              << " in case the executable is invoked within slurm it will "
                 "distribute the computation across all processes automatically"
              << endl;
         exit(EXIT_FAILURE);
     }
     const char* fileName = argv[1];
-    const size_t fileSize = FileSize(fileName);
+    const size_t fileSize = strtoull(argv[3], NULL, 10);
+    if(fileSize == 0) {
+        cerr << "Error, wrong file size" << endl;
+        exit(EXIT_FAILURE);
+    }
     const int nthreads = strtoul(argv[2], NULL, 10);
     if (!nthreads) {
         cerr << "Error, invalid number of threads" << endl;
@@ -142,7 +118,7 @@ int main(int argc, char* argv[]) {
             : fileSize / numProcesses + fileSize % numProcesses;
     const size_t globalOffset = processIndex * partSize;
     const double elapsed =
-        BufferedRead(fileName, partSize, nthreads, globalOffset);
+        BufferedWrite(fileName, partSize, nthreads, globalOffset);
     const double GiB = 0x40000000;
     const double GiBs = (partSize / GiB) / elapsed;
     if(slurmNodeId) cout << "Node ID: " << slurmNodeId << endl;
