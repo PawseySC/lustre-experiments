@@ -129,6 +129,7 @@ int main(int argc, char* argv[]) {
     }
     const char* slurmProcId = getenv("SLURM_PROCID");
     const char* slurmNumTasks = getenv("SLURM_NTASKS");
+    const char* slurmNodeId = getenv("SLURM_NODEID");
     const int processIndex = slurmProcId ? strtoull(slurmProcId, NULL, 10) : 0;
     const int numProcesses =
         slurmNumTasks ? strtoull(slurmNumTasks, NULL, 10) : 1;
@@ -144,11 +145,12 @@ int main(int argc, char* argv[]) {
         BufferedRead(fileName, partSize, nthreads, globalOffset);
     const double GiB = 0x40000000;
     const double GiBs = (fileSize / GiB) / elapsed;
-    cout << "Process: " << processIndex 
+    if(slurmNodeId) cout << "Node ID: " << slurmNodeId << endl;
+    cout << "\tProcess: " << processIndex 
          << endl
-         << "Bandwidth: " << GiBs << " GiB/s"
+         << "\tBandwidth: " << GiBs << " GiB/s"
          << endl
-         << "Elapsed time: " << elapsed
+         << "\tElapsed time: " << elapsed
          << " seconds" << endl << endl;
     return 0;
 }
