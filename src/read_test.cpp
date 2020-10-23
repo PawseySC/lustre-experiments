@@ -47,8 +47,6 @@ constexpr float GiBs(float seconds, size_t numBytes) {
 struct Config {
     int numThreads = 0;
     ReadMode readMode = ReadMode::Unbuffered;
-    size_t partNum = 0;
-    size_t numParts = 1;
     size_t partFraction = 1;  // read 1/stripeFraction bytes from each stripe
 };
 
@@ -224,20 +222,6 @@ Config ParseCommandLine(int argc, char** argv) {
                     exit(EXIT_FAILURE);
                 }
                 break;
-            case 'p':
-                config.partNum = int(strtoul(optarg, nullptr, 10));
-                if (errno == ERANGE) {
-                    cerr << "Invalid part number" << endl;
-                    exit(EXIT_FAILURE);
-                }
-                break;
-            case 'N':
-                config.numParts = int(strtoul(optarg, nullptr, 10));
-                if (errno == ERANGE) {
-                    cerr << "Invalid number of parts" << endl;
-                    exit(EXIT_FAILURE);
-                }
-                break;
             case 'f':
                 config.partFraction = int(strtoul(optarg, nullptr, 10));
                 if (errno == ERANGE) {
@@ -380,13 +364,20 @@ int main(int argc, char* argv[]) {
         printHelp(argv[0]);
         exit(EXIT_FAILURE);
     }
+    const char* slurmProcId = getenv("SLURM_PROCID");
+    const char* slurmNumTasks = getenv("SLURM_NTASKS");
+    const char* slurmNodeId = getenv("SLURM_NODEID");
+    const int processIndex = slurmProcId ? strtoull(slurmProcId, NULL, 10) : 0;
+    const int numProcesses =
+        slurmNumTasks ? strtoull(slurmNumTasks, NULL, 10) : 1;
     // getopt will change the pointers, save data first
     // const char* programName = argv[0];
     const char* fileName = argv[1];
     Config config = ParseCommandLine(argc, argv);
     const ReadMode readMode = config.readMode;
-    const size_t partNum = config.partNum;
-    const size_t numParts = config.numParts;
+    const size_t partNum = processIndex;
+    const size_t numParts = numProcesses;
+   
 
     llapi_layout* layout = llapi_layout_get_by_path(fileName, 0);
 
