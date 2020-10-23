@@ -422,9 +422,9 @@ int main(int argc, char* argv[]) {
 
     const size_t fileSize = FileSize(fileName);
     const size_t globalOffset = partNum * fileSize / numParts;
-    const size_t partSize = fileSize % numParts
-                                ? fileSize % numParts + fileSize / numParts
-                                : fileSize / numParts;
+    const size_t partSize = partNum != numParts - 1
+                                ? fileSize / numParts
+                                : fileSize / numParts + fileSize % numParts;
     // size_t partSize = stripeCount;
     // if process read only a subregion of the files we need to conpute
     // how many stripes are included in the region
