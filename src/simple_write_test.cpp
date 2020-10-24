@@ -28,7 +28,6 @@
 #include <future>
 #include <iostream>
 #include <numeric>
-#include <vector>
 
 using namespace std;
 
@@ -62,11 +61,11 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset) {
 //------------------------------------------------------------------------------
 double BufferedWrite(const char* fname, size_t size, int nthreads,
                      size_t globalOffset) {
-    vector<char> buffer(size);
+    char* buffer = new char[size];
     const size_t partSize = size / nthreads;
     const size_t lastPartSize =
         size % nthreads == 0 ? partSize : size % nthreads + partSize;
-    vector<future<void>> writers(nthreads);
+    future<void> writers[nthreads];
     using Clock = chrono::high_resolution_clock;
     auto start = Clock::now();
     for (int t = 0; t != nthreads; ++t) {
@@ -74,10 +73,11 @@ double BufferedWrite(const char* fname, size_t size, int nthreads,
         const bool isLast = t == nthreads - 1;
         const size_t sz = isLast ? lastPartSize : partSize;
         writers[t] = async(launch::async, WritePart, fname,
-                           buffer.data() + offset, sz, offset + globalOffset);
+                           buffer + offset, sz, offset + globalOffset);
     }
     for (auto& w : writers) w.wait();
     const auto end = Clock::now();
+    delete [] buffer;
     return chrono::duration_cast<chrono::nanoseconds>(end - start).count() /
            1E9;
 }

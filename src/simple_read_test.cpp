@@ -46,7 +46,6 @@
 #include <future>
 #include <iostream>
 #include <numeric>
-#include <vector>
 
 using namespace std;
 
@@ -90,11 +89,15 @@ size_t FileSize(const char* fname) {
 //------------------------------------------------------------------------------
 double BufferedRead(const char* fname, size_t size, int nthreads,
                     size_t globalOffset) {
-    vector<char> buffer(size);
+    char* buffer = new char[size];
+    if(!buffer) {
+        cerr << "Error, cannot allocate memory" << endl;
+        exit(EXIT_FAILURE);
+    }
     const size_t partSize = size / nthreads;
     const size_t lastPartSize =
         size % nthreads == 0 ? partSize : size % nthreads + partSize;
-    vector<future<void>> readers(nthreads);
+    future<void> readers[nthreads];
     using Clock = chrono::high_resolution_clock;
     auto start = Clock::now();
     for (int t = 0; t != nthreads; ++t) {
@@ -102,10 +105,11 @@ double BufferedRead(const char* fname, size_t size, int nthreads,
         const bool isLast = t == nthreads - 1;
         const size_t sz = isLast ? lastPartSize : partSize;
         readers[t] = async(launch::async, ReadPart, fname,
-                           buffer.data() + offset, sz, offset + globalOffset);
+                           buffer + offset, sz, offset + globalOffset);
     }
     for (auto& r : readers) r.wait();
     const auto end = Clock::now();
+    delete [] buffer;
     return chrono::duration_cast<chrono::nanoseconds>(end - start).count() /
            1E9;
 }
