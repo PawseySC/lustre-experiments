@@ -1,11 +1,48 @@
+/*******************************************************************************
+ * BSD 3-Clause License
+ *
+ * Copyright (c) 2020, Commonwealth Scientific and Industrial Research 
+ * Organisation (CSIRO) and The Pawsey Supercomputing Centre
+ * 
+ * Author: Ugo Varetto
+ * 
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ * this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived from
+ *    this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ ******************************************************************************/
+
 // Author: Ugo Varetto
 // simple parallel write test: each thread writes to a different location
-//                            in the output file, in case the executable is
-//                            invoked within slurm it will distribute the
-//                            computation across all processes automatically,
-//                            with each process writing a different sub-region
-//                            of the file
-// compilation: g++ -pthread simple_write_test.cpp -o simple_write_test
+//                             in the output file, in case the executable is
+//                             invoked within slurm it will distribute the
+//                             computation across all processes automatically,
+//                             with each process writing a different sub-region
+//                             of the file
+// compilation: g++ -pthread simple_write_test.cpp -O2 -o simple_write_test
 //
 // Lustre:
 //
@@ -17,7 +54,7 @@
 // fill file with data: dd if=/dev/zero of=infile bs=1G count=10
 // note: when data validation is required /dev/urandom should be used
 // instead
-
+// Overstriping: https://wiki.lustre.org/images/b/b3/LUG2019-Lustre_Overstriping_Shared_Write_Performance-Farrell.pdf
 
 #include <sys/stat.h>
 
@@ -37,7 +74,7 @@ using namespace std;
 
 //------------------------------------------------------------------------------
 void WritePart(const char* fname, char* src, size_t size, size_t offset) {
-    // unbuffered open/pread/close preferred
+    // unbuffered open/pwrite/close preferred
     FILE* f = fopen(fname, "wb");
     if (!f) {
         cerr << "Error opening file: " << strerror(errno) << endl;
@@ -59,8 +96,8 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset) {
 }
 
 //------------------------------------------------------------------------------
-double BufferedWrite(const char* fname, size_t size, int nthreads,
-                     size_t globalOffset) {
+double Write(const char* fname, size_t size, int nthreads,
+             size_t globalOffset) {
     char* buffer = new char[size];
     const size_t partSize = size / nthreads;
     const size_t lastPartSize =
@@ -72,13 +109,14 @@ double BufferedWrite(const char* fname, size_t size, int nthreads,
         const size_t offset = partSize * t;
         const bool isLast = t == nthreads - 1;
         const size_t sz = isLast ? lastPartSize : partSize;
-        writers[t] = async(launch::async, WritePart, fname,
-                           buffer + offset, sz, offset + globalOffset);
+        writers[t] = async(launch::async, WritePart, fname, buffer + offset, sz,
+                           offset + globalOffset);
     }
     for (auto& w : writers) w.wait();
     const auto end = Clock::now();
-    delete [] buffer;
-    return chrono::duration_cast<chrono::nanoseconds>(end - start).count() /
+    delete[] buffer;
+    return double(chrono::duration_cast<chrono::nanoseconds>(end - start)
+                      .count()) /
            1E9;
 }
 
@@ -86,7 +124,8 @@ double BufferedWrite(const char* fname, size_t size, int nthreads,
 int main(int argc, char* argv[]) {
     if (argc != 4) {
         cerr << "Usage: " << argv[0]
-             << " <file name> <number of threads per process> <file size>" << endl
+             << " <file name> <number of threads per process> <file size>"
+             << endl
              << " in case the executable is invoked within slurm it will "
                 "distribute the computation across all processes automatically"
              << endl;
@@ -94,7 +133,7 @@ int main(int argc, char* argv[]) {
     }
     const char* fileName = argv[1];
     const size_t fileSize = strtoull(argv[3], NULL, 10);
-    if(fileSize == 0) {
+    if (fileSize == 0) {
         cerr << "Error, wrong file size" << endl;
         exit(EXIT_FAILURE);
     }
@@ -117,16 +156,13 @@ int main(int argc, char* argv[]) {
             ? fileSize / numProcesses
             : fileSize / numProcesses + fileSize % numProcesses;
     const size_t globalOffset = processIndex * partSize;
-    const double elapsed =
-        BufferedWrite(fileName, partSize, nthreads, globalOffset);
-    const double GiB = 0x40000000;
+    const double elapsed = Write(fileName, partSize, nthreads, globalOffset);
+    const double GiB = 1 << 30;
     const double GiBs = (partSize / GiB) / elapsed;
-    if(slurmNodeId) cout << "Node ID: " << slurmNodeId << endl;
-    cout << "\tProcess: " << processIndex 
-         << endl
-         << "\tBandwidth: " << GiBs << " GiB/s"
-         << endl
-         << "\tElapsed time: " << elapsed
-         << " seconds" << endl << endl;
+    if (slurmNodeId) cout << "Node ID: " << slurmNodeId << endl;
+    cout << "\tProcess: " << processIndex << endl
+         << "\tBandwidth: " << GiBs << " GiB/s" << endl
+         << "\tElapsed time: " << elapsed << " seconds" << endl
+         << endl;
     return 0;
 }

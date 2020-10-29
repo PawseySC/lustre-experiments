@@ -1,3 +1,4 @@
+//simple sequence generator: write integer sequence to file
 #include <fstream>
 #include <iostream>
 using namespace std;

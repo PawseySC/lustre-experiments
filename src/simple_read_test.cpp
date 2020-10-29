@@ -1,11 +1,47 @@
-// Author: Ugo Varetto
+/*******************************************************************************
+ * BSD 3-Clause License
+ *
+ * Copyright (c) 2020, Commonwealth Scientific and Industrial Research 
+ * Organisation (CSIRO) and The Pawsey Supercomputing Centre
+ * 
+ * Author: Ugo Varetto
+ * 
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ * this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived from
+ *    this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ ******************************************************************************/
+
 // simple parallel read test: each thread reads from a different location
 //                            in the input file, in case the executable is
 //                            invoked within slurm it will distribute the
 //                            computation across all processes automatically,
 //                            with each process reading a different sub-region
 //                            of the file
-// compilation: g++ -pthread simple_read_test.cpp -o simple_read_test
+// compilation: g++ -pthread simple_read_test.cpp -O2 -o simple_read_test
 //
 // Lustre:
 //
@@ -18,11 +54,11 @@
 // note: when data validation is required /dev/urandom should be used
 // instead
 
-// uvaretto@zeus-1:~/projects/lustre-scratch/tmp> time srun -n 4 -N 4 --cpus-per-task 16 --mem 32000 -p copyq ./rt data/striped_10G_over_64/10Ghpc3 16
-// srun: job 4866510 queued and waiting for resources
-// srun: job 4866510 has been allocated resources
-// Process: 2 Bandwidth: 5.00696 GiB/s
-// Elapsed time: 1.99722 seconds
+// uvaretto@zeus-1:~/projects/lustre-scratch/tmp> time srun -n 4 -N 4
+// --cpus-per-task 16 --mem 32000 -p copyq ./rt data/striped_10G_over_64/10Ghpc3
+// 16 srun: job 4866510 queued and waiting for resources srun: job 4866510 has
+// been allocated resources Process: 2 Bandwidth: 5.00696 GiB/s Elapsed
+// time: 1.99722 seconds
 //
 // Process: 1 Bandwidth: 4.84904 GiB/s
 // Elapsed time: 2.06227 seconds
@@ -87,10 +123,9 @@ size_t FileSize(const char* fname) {
 }
 
 //------------------------------------------------------------------------------
-double BufferedRead(const char* fname, size_t size, int nthreads,
-                    size_t globalOffset) {
+double Read(const char* fname, size_t size, int nthreads, size_t globalOffset) {
     char* buffer = new char[size];
-    if(!buffer) {
+    if (!buffer) {
         cerr << "Error, cannot allocate memory" << endl;
         exit(EXIT_FAILURE);
     }
@@ -104,13 +139,14 @@ double BufferedRead(const char* fname, size_t size, int nthreads,
         const size_t offset = partSize * t;
         const bool isLast = t == nthreads - 1;
         const size_t sz = isLast ? lastPartSize : partSize;
-        readers[t] = async(launch::async, ReadPart, fname,
-                           buffer + offset, sz, offset + globalOffset);
+        readers[t] = async(launch::async, ReadPart, fname, buffer + offset, sz,
+                           offset + globalOffset);
     }
     for (auto& r : readers) r.wait();
     const auto end = Clock::now();
-    delete [] buffer;
-    return chrono::duration_cast<chrono::nanoseconds>(end - start).count() /
+    delete[] buffer;
+    return double(chrono::duration_cast<chrono::nanoseconds>(end - start)
+                      .count()) /
            1E9;
 }
 
@@ -137,7 +173,7 @@ int main(int argc, char* argv[]) {
     const int processIndex = slurmProcId ? strtoull(slurmProcId, NULL, 10) : 0;
     const int numProcesses =
         slurmNumTasks ? strtoull(slurmNumTasks, NULL, 10) : 1;
-    // processes 0 to numProcesses - 1 read the same amount of data
+    // processes 0 to numProcesses - 1 read the same amount of data;
     // process with index == numProcesses - 1 reads the same amount of data
     // as the others + remainder of fileSize / numProcesses division
     const size_t partSize =
@@ -145,16 +181,13 @@ int main(int argc, char* argv[]) {
             ? fileSize / numProcesses
             : fileSize / numProcesses + fileSize % numProcesses;
     const size_t globalOffset = processIndex * partSize;
-    const double elapsed =
-        BufferedRead(fileName, partSize, nthreads, globalOffset);
-    const double GiB = 0x40000000;
+    const double elapsed = Read(fileName, partSize, nthreads, globalOffset);
+    const double GiB = 1 << 30;
     const double GiBs = (partSize / GiB) / elapsed;
-    if(slurmNodeId) cout << "Node ID: " << slurmNodeId << endl;
-    cout << "\tProcess: " << processIndex 
-         << endl
-         << "\tBandwidth: " << GiBs << " GiB/s"
-         << endl
-         << "\tElapsed time: " << elapsed
-         << " seconds" << endl << endl;
+    if (slurmNodeId) cout << "Node ID: " << slurmNodeId << endl;
+    cout << "\tProcess: " << processIndex << endl
+         << "\tBandwidth: " << GiBs << " GiB/s" << endl
+         << "\tElapsed time: " << elapsed << " seconds" << endl
+         << endl;
     return 0;
 }
