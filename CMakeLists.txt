@@ -76,7 +76,7 @@ target_link_libraries(read_test ${LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 # target_link_libraries(write_test ${LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 # target_link_libraries(parallel_copy ${LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 
-# no dependencies can be compiled separately on the command line:
+# no dependencies, can be compiled separately on the command line:
 # g++ -pthread simple_***_test.cpp -O2 -o simple_***_test
 add_executable(simple_read_test src/simple_read_test.cpp)
 add_executable(simple_write_test src/simple_write_test.cpp)

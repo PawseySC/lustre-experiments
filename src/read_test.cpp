@@ -388,7 +388,9 @@ float MMapRead(const char* fname, size_t filePartSize, int nthreads,
     const size_t lastPartSize = filePartSize % nthreads == 0
                                     ? partSize
                                     : filePartSize % nthreads + partSize;
-    vector<char> buffer(filePartSize);
+    // never ever use std::vector<> for uninitialised buffers: it will try to
+    // default initialise every single POD element!
+    char* buffer = new char[filePartSize];
     vector<future<ReadInfo>> readers(nthreads);
     if (mlockall(MCL_CURRENT)) {  // normally a bad idea: locks *all* process
                                   // memory at once
@@ -400,7 +402,7 @@ float MMapRead(const char* fname, size_t filePartSize, int nthreads,
         const size_t offset = partSize * t;
         const size_t sz = t != nthreads - 1 ? partSize : lastPartSize;
         readers[t] =
-            async(launch::async, ReadPartMem, fname, buffer.data() + offset,
+            async(launch::async, ReadPartMem, fname, buffer + offset,
                   sz / partFraction, offset + globalOffset);
     }
     for (auto& r : readers) r.wait();
