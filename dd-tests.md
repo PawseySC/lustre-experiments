@@ -2,7 +2,7 @@
 
 `dd` does have different performance on different systems.
 See below for code that generates an in-memory 1G file not touching the file system.
-On one system the `dd` performance is 2.5x faster than the other.
+On one system the `dd` performance is 2.3x faster than the other.
 
 `dd` workflow:
 
@@ -17,7 +17,7 @@ measured is the cost of the following operations:
 1. `malloc`
 2. `mempcpy`
 3. reading from input file
-4. iterating over the number of blocks
+4. iterating over blocks
 5. ...
 6. writing into output file
 
