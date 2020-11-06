@@ -1,4 +1,5 @@
-# lustre-experiments
-Code to test parallel read/write patterns
+# Lustre experiments
+
+Code to test parallel read/write patterns.
 
 *under construction*
