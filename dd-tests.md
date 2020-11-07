@@ -151,7 +151,7 @@ uvaretto@nid00990:~> srun dd if=/dev/zero of=/dev/null bs=2G count=1
 
 i.e.:
 
-* up to 3X difference in performance
+* up to 3X difference in performance between systems, up to 4X on the same system
 * tests using `dd` on the login node of system (2) *might* be running faster as long as the target file resides on a fast enough file system **AND**
   the CPU is fast enough when copying data in memory between input and output buffer
 * tests using `dd` on the compute node of system (2) are most likely always going to run slower than anywhere else
