@@ -107,3 +107,52 @@ uvaretto@nid00672:~/projects/scratch> srun ./dd.sh
 1+0 records out
 1073741824 bytes (1.1 GB, 1.0 GiB) copied, 1.54844 s, 693 MB/s
 ```
+
+but it gets worse.
+
+## Redirecting to `/dev/null`
+
+No filesystem at all.
+
+### 1 (`zeus.pawsey.org.au`)
+
+Login:
+```term
+uvaretto@zeus-1:~> dd if=/dev/zero of=/dev/null bs=2G count=1
+0+1 records in
+0+1 records out
+2147479552 bytes (2.1 GB, 2.0 GiB) copied, 0.631308 s, 3.4 GB/s
+```
+Compute:
+```term
+uvaretto@z049:~> srun dd if=/dev/zero of=/dev/null bs=2G count=1
+0+1 records in
+0+1 records out
+2147479552 bytes (2.1 GB, 2.0 GiB) copied, 0.632784 s, 3.4 GB/s
+```
+
+### 2 (`magnus.pawsey.org.au`)
+
+Login:
+```term
+uvaretto@magnus-2:~> dd if=/dev/zero of=/dev/null bs=2G count=1
+0+1 records in
+0+1 records out
+2147479552 bytes (2.1 GB, 2.0 GiB) copied, 0.521756 s, 4.1 GB/s
+```
+
+Compute:
+```term
+uvaretto@nid00990:~> srun dd if=/dev/zero of=/dev/null bs=2G count=1
+0+1 records in
+0+1 records out
+2147479552 bytes (2.1 GB, 2.0 GiB) copied, 1.93369 s, 1.1 GB/s
+```
+
+i.e.:
+
+* up to 3X difference in performance
+* tests using `dd` on the login node of system (2) *might* be running faster as long as the target file resides on a fast enough file system **AND**
+  the CPU is fast enough when copying data in memory between input and output buffer
+* tests using `dd` on the compute node of system (2) are most likely always going to run slower than anywhere else
+
