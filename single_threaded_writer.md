@@ -4,6 +4,7 @@ Numbers below show the write performance when writing to an 8GiB file with
 1GiB stripe size and without striping.
 For a single threaded writer there seems to be no benefit in using striping.
 
+See [here](https://www.citutor.org/SITES/AContent/home/course/content.php?_cid=62), performance varies non-linerarly and non-uniformly with stripe size.
 
 ## 1 `magnus.pawesey.org.au`
 
