@@ -108,16 +108,15 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset) {
 }
 #else
 //------------------------------------------------------------------------------
-// ubuffered, direct
+// ubuffered
 void WritePart(const char* fname, char* src, size_t size, size_t offset) {
-    const int flags = O_WRONLY | O_CREAT | O_APPEND | O_DIRECT;
+    const int flags = O_WRONLY  | O_CREAT | O_LARGEFILE; //if supported by filesystem, add O_DIRECT
     const mode_t mode = 0644;  // user read/write, group read, all read
     int fd = open(fname, flags, mode);
     if (fd < 0) {
         cerr << "Failed to open file. Error: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
-    cout << fd << " " << size << " " << offset << endl;
     if (pwrite(fd, src, size, offset) < 0) {
         cerr << "Failed to write to file. Error: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);

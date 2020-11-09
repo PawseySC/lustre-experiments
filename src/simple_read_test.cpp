@@ -121,9 +121,9 @@ void ReadPart(const char* fname, char* dest, size_t size, size_t offset) {
     }
 }
 #else
-// ubuffered, direct
+// ubuffered
 void ReadPart(const char* fname, char* src, size_t size, size_t offset) {
-    const int flags = O_RDONLY | O_DIRECT;
+    const int flags = O_RDONLY | O_LARGEFILE; // if supported add O_DIRECT
     const mode_t mode = 0444;  // user, goup, all: read
     int fd = open(fname, flags, mode);
     if (fd < 0) {
