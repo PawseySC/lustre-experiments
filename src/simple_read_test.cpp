@@ -41,7 +41,12 @@
 //                            computation across all processes automatically,
 //                            with each process reading a different sub-region
 //                            of the file
-// compilation: g++ -pthread simple_read_test.cpp -O2 -o simple_read_test
+// compilation:
+//     g++ -pthread simple_read_test.cpp -O2 -o simple_read_test \
+//          [-D PAGE_ALIGNED] [-D BUFFERED]
+// options:
+//   page aligned memory buffer: -D PAGE_ALIGNED
+//   buffered: -D BUFFERED
 //
 // Lustre:
 //
@@ -73,7 +78,11 @@
 // user    0m0.013s
 // sys     0m0.008s
 
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <cerrno>
 #include <chrono>
@@ -89,9 +98,9 @@ using namespace std;
 #error "C++11 or newer required"
 #endif
 
+#ifdef BUFFERED
 //------------------------------------------------------------------------------
 void ReadPart(const char* fname, char* dest, size_t size, size_t offset) {
-    // unbuffered open/pread/close preferred
     FILE* f = fopen(fname, "rb");
     if (!f) {
         cerr << "Error opening file: " << strerror(errno) << endl;
@@ -111,6 +120,26 @@ void ReadPart(const char* fname, char* dest, size_t size, size_t offset) {
         exit(EXIT_FAILURE);
     }
 }
+#else
+// ubuffered, direct
+void ReadPart(const char* fname, char* src, size_t size, size_t offset) {
+    const int flags = O_RDONLY | O_DIRECT;
+    const mode_t mode = 0444;  // user, goup, all: read
+    int fd = open(fname, flags, mode);
+    if (fd < 0) {
+        cerr << "Failed to open file. Error: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    if (pread(fd, src, size, offset) < 0) {
+        cerr << "Failed to read from file. Error: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    if (close(fd)) {
+        cerr << "Error closing file " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+}
+#endif
 
 //------------------------------------------------------------------------------
 size_t FileSize(const char* fname) {
@@ -124,10 +153,14 @@ size_t FileSize(const char* fname) {
 
 //------------------------------------------------------------------------------
 double Read(const char* fname, size_t size, int nthreads, size_t globalOffset) {
-    char* buffer = new char[size];
+#ifdef PAGE_ALIGNED
+    char* buffer = static_cast<char*>(aligned_alloc(getpagesize(), size));
+#else
+    char* buffer = static_cast<char*>(malloc(size));
+#endif
     if (!buffer) {
-        cerr << "Error, cannot allocate memory" << endl;
-        exit(EXIT_FAILURE);
+        cerr << "Failed to allocate memory. Error: " << strerror(errno)
+             << endl;
     }
     const size_t partSize = size / nthreads;
     const size_t lastPartSize =
@@ -144,7 +177,7 @@ double Read(const char* fname, size_t size, int nthreads, size_t globalOffset) {
     }
     for (auto& r : readers) r.wait();
     const auto end = Clock::now();
-    delete[] buffer;
+    free(buffer);
     return double(chrono::duration_cast<chrono::nanoseconds>(end - start)
                       .count()) /
            1E9;

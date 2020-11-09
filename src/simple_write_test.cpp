@@ -1,11 +1,11 @@
 /*******************************************************************************
  * BSD 3-Clause License
  *
- * Copyright (c) 2020, Commonwealth Scientific and Industrial Research 
+ * Copyright (c) 2020, Commonwealth Scientific and Industrial Research
  * Organisation (CSIRO) and The Pawsey Supercomputing Centre
- * 
+ *
  * Author: Ugo Varetto
- * 
+ *
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -42,7 +42,12 @@
 //                             computation across all processes automatically,
 //                             with each process writing a different sub-region
 //                             of the file
-// compilation: g++ -pthread simple_write_test.cpp -O2 -o simple_write_test
+// compilation:
+//     g++ -pthread simple_write_test.cpp -O2 -o simple_write_test \
+//          [-D PAGE_ALIGNED] [-D BUFFERED]
+// options:
+//   page aligned memory buffer: -D PAGE_ALIGNED
+//   buffered: -D BUFFERED
 //
 // Lustre:
 //
@@ -54,9 +59,14 @@
 // fill file with data: dd if=/dev/zero of=infile bs=1G count=10
 // note: when data validation is required /dev/urandom should be used
 // instead
-// Overstriping: https://wiki.lustre.org/images/b/b3/LUG2019-Lustre_Overstriping_Shared_Write_Performance-Farrell.pdf
+// Overstriping:
+// https://wiki.lustre.org/images/b/b3/LUG2019-Lustre_Overstriping_Shared_Write_Performance-Farrell.pdf
 
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <cerrno>
 #include <chrono>
@@ -64,6 +74,7 @@
 #include <cstring>
 #include <future>
 #include <iostream>
+#include <memory>
 #include <numeric>
 
 using namespace std;
@@ -72,9 +83,10 @@ using namespace std;
 #error "C++11 or newer required"
 #endif
 
+#ifdef BUFFERED
 //------------------------------------------------------------------------------
+// buffered
 void WritePart(const char* fname, char* src, size_t size, size_t offset) {
-    // unbuffered open/pwrite/close preferred
     FILE* f = fopen(fname, "wb");
     if (!f) {
         cerr << "Error opening file: " << strerror(errno) << endl;
@@ -94,11 +106,41 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset) {
         exit(EXIT_FAILURE);
     }
 }
+#else
+//------------------------------------------------------------------------------
+// ubuffered, direct
+void WritePart(const char* fname, char* src, size_t size, size_t offset) {
+    const int flags = O_WRONLY | O_CREAT | O_APPEND | O_DIRECT;
+    const mode_t mode = 0644;  // user read/write, group read, all read
+    int fd = open(fname, flags, mode);
+    if (fd < 0) {
+        cerr << "Failed to open file. Error: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    cout << fd << " " << size << " " << offset << endl;
+    if (pwrite(fd, src, size, offset) < 0) {
+        cerr << "Failed to write to file. Error: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    if (close(fd)) {
+        cerr << "Error closing file " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+}
+#endif
 
 //------------------------------------------------------------------------------
 double Write(const char* fname, size_t size, int nthreads,
              size_t globalOffset) {
-    char* buffer = new char[size];
+#ifdef PAGE_ALIGNED
+    char* buffer = static_cast<char*>(aligned_alloc(getpagesize(), size));
+#else
+    char* buffer = static_cast<char*>(malloc(size));
+#endif
+    if (!buffer) {
+        cerr << "Failed to allocate memory. Error: " << strerror(errno)
+             << endl;
+    }
     const size_t partSize = size / nthreads;
     const size_t lastPartSize =
         size % nthreads == 0 ? partSize : size % nthreads + partSize;
@@ -114,7 +156,7 @@ double Write(const char* fname, size_t size, int nthreads,
     }
     for (auto& w : writers) w.wait();
     const auto end = Clock::now();
-    delete[] buffer;
+    free(buffer);
     return double(chrono::duration_cast<chrono::nanoseconds>(end - start)
                       .count()) /
            1E9;

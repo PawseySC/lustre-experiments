@@ -77,8 +77,19 @@ target_link_libraries(read_test ${LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 # target_link_libraries(parallel_copy ${LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 
 # no dependencies, can be compiled separately on the command line:
-# g++ -pthread simple_***_test.cpp -O2 -o simple_***_test
+# g++ -pthread simple_***_test.cpp -O2 [-D PAGE_ALIGNED] [-D UNBUFFERED] \
+#     -o simple_***_test
+set(BUFFERED FALSE CACHE BOOL "Unbuffered read/write")
+set(PAGE_ALIGNED FALSE CACHE BOOL "Page-aligned memory buffer")
 add_executable(simple_read_test src/simple_read_test.cpp)
 add_executable(simple_write_test src/simple_write_test.cpp)
 target_link_libraries(simple_read_test ${CMAKE_THREAD_LIBS_INIT})
 target_link_libraries(simple_write_test ${CMAKE_THREAD_LIBS_INIT})
+if(BUFFERED)
+    target_compile_options(simple_read_test PUBLIC -D "BUFFERED")
+    target_compile_options(simple_write_test PUBLIC -D "BUFFERED")
+endif(BUFFERED)
+if(PAGE_ALIGNED)
+    target_compile_options(simple_read_test -D "PAGE_ALIGNED")
+    target_compile_options(simple_write_test -D "PAGE_ALIGNED")
+endif(PAGE_ALIGNED)
