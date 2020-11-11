@@ -45,7 +45,7 @@ Node ID: 0
 
 ## Code
 
-The following code was used.
+The following code was used. Look in the git repository for the latest version.
 
 Simple write to file through `fopen/fseek/fwrite` reading data from
 uninitialsed memory.
