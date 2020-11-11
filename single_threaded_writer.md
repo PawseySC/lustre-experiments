@@ -6,7 +6,7 @@ For a single threaded writer there seems to be no benefit in using striping.
 
 See [here](https://www.nics.tennessee.edu/computing-resources/file-systems/io-lustre-tips) and [here](https://www.citutor.org/SITES/AContent/home/course/content.php?_cid=62), performance varies non-linerarly and non-uniformly with stripe size.
 
-## 1 `magnus.pawesey.org.au`
+## 1 `magnus.pawsey.org.au`
 
 ```term
 uvaretto@nid00051:~/projects/lustre-scratch/tmp> lfs setstripe data/8G_1G_striped -c 8 -S 1G
