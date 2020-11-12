@@ -88,7 +88,8 @@ using namespace std;
 #ifdef BUFFERED
 //------------------------------------------------------------------------------
 // buffered
-void WritePart(const char* fname, char* src, size_t size, size_t offset) {
+void WritePart(const char* fname, char* src, size_t size, size_t offset,
+               int64_t transferSize = -1) {
     FILE* f = fopen(fname, "wb");
     if (!f) {
         cerr << "Error opening file: " << strerror(errno) << endl;
@@ -111,7 +112,8 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset) {
 #else
 //------------------------------------------------------------------------------
 // ubuffered
-void WritePart(const char* fname, char* src, size_t size, size_t offset) {
+void WritePart(const char* fname, char* src, size_t size, size_t offset,
+               int64_t transferSize = -1) {
     const int flags = O_WRONLY | O_CREAT |
                       O_LARGEFILE;  // if supported by filesystem, add O_DIRECT
     const mode_t mode = 0644;       // user read/write, group read, all read
@@ -120,9 +122,18 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset) {
         cerr << "Failed to open file. Error: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
-    if (pwrite(fd, src, size, offset) < 0) {
-        cerr << "Failed to write to file. Error: " << strerror(errno) << endl;
-        exit(EXIT_FAILURE);
+    transferSize = transferSize < 0 ? size : transferSize;
+    const size_t partSize = size / transferSize;
+    const size_t lastPartSize = size % transferSize
+                                    ? size / transferSize + size % transferSize
+                                    : partSize;
+    for (size_t off = 0; off < size; off += partSize) {
+        const size_t sz = off < size - partSize ? partSize : lastPartSize;
+        if (pwrite(fd, src, sz, offset + off) < 0) {
+            cerr << "Failed to write to file. Error: " << strerror(errno)
+                 << endl;
+            exit(EXIT_FAILURE);
+        }
     }
     if (close(fd)) {
         cerr << "Error closing file " << strerror(errno) << endl;
@@ -134,8 +145,8 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset) {
 //------------------------------------------------------------------------------
 // Write to file in parallel starting at global offset (process id X file size /
 // # processes)
-double Write(const char* fname, size_t size, int nthreads,
-             size_t globalOffset) {
+double Write(const char* fname, size_t size, int nthreads, size_t globalOffset,
+             int64_t transferSize = -1) {
 #ifdef PAGE_ALIGNED
     char* buffer = static_cast<char*>(aligned_alloc(getpagesize(), size));
 #else
@@ -155,7 +166,7 @@ double Write(const char* fname, size_t size, int nthreads,
         const bool isLast = t == nthreads - 1;
         const size_t sz = isLast ? lastPartSize : partSize;
         writers[t] = async(launch::async, WritePart, fname, buffer + offset, sz,
-                           offset + globalOffset);
+                           offset + globalOffset, transferSize);
     }
     for (auto& w : writers) w.wait();
     const auto end = Clock::now();
@@ -174,7 +185,8 @@ int main(int argc, char* argv[]) {
              << " in case the executable is invoked within slurm it will "
                 "distribute the computation across all processes automatically"
              << endl
-             << " CSV output format: node id, process id, bandwidth (GiB/s), time (s)"
+             << " CSV output format: node id, process id, bandwidth (GiB/s), "
+                "time (s)"
              << endl;
         exit(EXIT_FAILURE);
     }
@@ -206,7 +218,8 @@ int main(int argc, char* argv[]) {
     const double elapsed = Write(fileName, partSize, nthreads, globalOffset);
     const double GiB = 1 << 30;
     const double GiBs = (partSize / GiB) / elapsed;
-    if (slurmNodeId) cout << slurmNodeId << "," << processIndex << ","
-                          << GiBs << "," << elapsed << endl;
+    if (slurmNodeId)
+        cout << slurmNodeId << "," << processIndex << "," << GiBs << ","
+             << elapsed << endl;
     return 0;
 }
