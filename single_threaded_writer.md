@@ -1,12 +1,15 @@
 # Single threaded write test
 
 Numbers below show the write performance when writing to an 8GiB file with
-1GiB stripe size and without striping.
+1GiB stripe size and without striping, using large stripe size. 
+
+With smaller stripe size and smaller transfer buffer size it **might** happen that data on the server is buffered, then flushed to OSTs and disks in parallel, however I could not find any conclusive evidence of that happening and it would certinly also have a dependency on the number of clients connected to any specific OST anyway.
+
 For a single threaded writer there seems to be no benefit in using striping.
 
-See [here](https://www.citutor.org/SITES/AContent/home/course/content.php?_cid=62), performance varies non-linerarly and non-uniformly with stripe size.
+See [here](https://www.nics.tennessee.edu/computing-resources/file-systems/io-lustre-tips) and [here](https://www.citutor.org/SITES/AContent/home/course/content.php?_cid=62), performance varies non-linerarly and non-uniformly with stripe size.
 
-## 1 `magnus.pawesey.org.au`
+## 1 `magnus.pawsey.org.au`
 
 ```term
 uvaretto@nid00051:~/projects/lustre-scratch/tmp> lfs setstripe data/8G_1G_striped -c 8 -S 1G
@@ -42,7 +45,7 @@ Node ID: 0
 
 ## Code
 
-The following code was used.
+The following code was used. Look in the git repository for the latest version.
 
 Simple write to file through `fopen/fseek/fwrite` reading data from
 uninitialsed memory.
