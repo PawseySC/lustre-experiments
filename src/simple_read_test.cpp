@@ -98,6 +98,8 @@ using namespace std;
 #error "C++11 or newer required"
 #endif
 
+// The following functions write a single file part, starting at a specific
+// offset. Both buffered and unbuffered versions are implemented.
 #ifdef BUFFERED
 //------------------------------------------------------------------------------
 void ReadPart(const char* fname, char* dest, size_t size, size_t offset) {
@@ -152,6 +154,8 @@ size_t FileSize(const char* fname) {
 }
 
 //------------------------------------------------------------------------------
+// Read file starting a specified global offset.
+// Global offset = process id X file size / # processes
 double Read(const char* fname, size_t size, int nthreads, size_t globalOffset) {
 #ifdef PAGE_ALIGNED
     char* buffer = static_cast<char*>(aligned_alloc(getpagesize(), size));
@@ -190,6 +194,8 @@ int main(int argc, char* argv[]) {
              << " <file name> <number of threads per process>" << endl
              << " in case the executable is invoked within slurm it will "
                 "distribute the computation across all processes automatically"
+             << endl
+             << " CSV output format: node id, process id, bandwidth (GiB/s), time (s)"
              << endl;
         exit(EXIT_FAILURE);
     }
@@ -217,10 +223,7 @@ int main(int argc, char* argv[]) {
     const double elapsed = Read(fileName, partSize, nthreads, globalOffset);
     const double GiB = 1 << 30;
     const double GiBs = (partSize / GiB) / elapsed;
-    if (slurmNodeId) cout << "Node ID: " << slurmNodeId << endl;
-    cout << "\tProcess: " << processIndex << endl
-         << "\tBandwidth: " << GiBs << " GiB/s" << endl
-         << "\tElapsed time: " << elapsed << " seconds" << endl
-         << endl;
+    if (slurmNodeId) cout << slurmNodeId << "," << processIndex << ","
+                          << GiBs << "," << elapsed << endl;
     return 0;
 }

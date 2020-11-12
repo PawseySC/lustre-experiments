@@ -83,6 +83,8 @@ using namespace std;
 #error "C++11 or newer required"
 #endif
 
+// The following functions write a single file part, starting at a specific
+// offset. Both buffered and unbuffered versions are implemented.
 #ifdef BUFFERED
 //------------------------------------------------------------------------------
 // buffered
@@ -110,8 +112,9 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset) {
 //------------------------------------------------------------------------------
 // ubuffered
 void WritePart(const char* fname, char* src, size_t size, size_t offset) {
-    const int flags = O_WRONLY  | O_CREAT | O_LARGEFILE; //if supported by filesystem, add O_DIRECT
-    const mode_t mode = 0644;  // user read/write, group read, all read
+    const int flags = O_WRONLY | O_CREAT |
+                      O_LARGEFILE;  // if supported by filesystem, add O_DIRECT
+    const mode_t mode = 0644;       // user read/write, group read, all read
     int fd = open(fname, flags, mode);
     if (fd < 0) {
         cerr << "Failed to open file. Error: " << strerror(errno) << endl;
@@ -129,6 +132,8 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset) {
 #endif
 
 //------------------------------------------------------------------------------
+// Write to file in parallel starting at global offset (process id X file size /
+// # processes)
 double Write(const char* fname, size_t size, int nthreads,
              size_t globalOffset) {
 #ifdef PAGE_ALIGNED
@@ -137,8 +142,7 @@ double Write(const char* fname, size_t size, int nthreads,
     char* buffer = static_cast<char*>(malloc(size));
 #endif
     if (!buffer) {
-        cerr << "Failed to allocate memory. Error: " << strerror(errno)
-             << endl;
+        cerr << "Failed to allocate memory. Error: " << strerror(errno) << endl;
     }
     const size_t partSize = size / nthreads;
     const size_t lastPartSize =
@@ -169,6 +173,8 @@ int main(int argc, char* argv[]) {
              << endl
              << " in case the executable is invoked within slurm it will "
                 "distribute the computation across all processes automatically"
+             << endl
+             << " CSV output format: node id, process id, bandwidth (GiB/s), time (s)"
              << endl;
         exit(EXIT_FAILURE);
     }
@@ -200,10 +206,7 @@ int main(int argc, char* argv[]) {
     const double elapsed = Write(fileName, partSize, nthreads, globalOffset);
     const double GiB = 1 << 30;
     const double GiBs = (partSize / GiB) / elapsed;
-    if (slurmNodeId) cout << "Node ID: " << slurmNodeId << endl;
-    cout << "\tProcess: " << processIndex << endl
-         << "\tBandwidth: " << GiBs << " GiB/s" << endl
-         << "\tElapsed time: " << elapsed << " seconds" << endl
-         << endl;
+    if (slurmNodeId) cout << slurmNodeId << "," << processIndex << ","
+                          << GiBs << "," << elapsed << endl;
     return 0;
 }
