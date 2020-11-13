@@ -40,8 +40,8 @@
 //                             in the output file, in case the executable is
 //                             invoked within slurm it will distribute the
 //                             computation across all processes automatically,
-//                             with each process writing a different sub-region
-//                             of the file
+//                             with each process writing to a different
+//                             sub-region in the file
 // compilation:
 //     g++ -pthread simple_write_test.cpp -O2 -o simple_write_test \
 //          [-D PAGE_ALIGNED] [-D BUFFERED]
@@ -84,7 +84,9 @@ using namespace std;
 #endif
 
 // The following functions write a single file part, starting at a specific
-// offset. Both buffered and unbuffered versions are implemented.
+// offset, buffer transer size can be specified, otherwise the transfer buffer
+// size will be equal to overall buffer size.
+// Both buffered and unbuffered versions are implemented.
 #ifdef BUFFERED
 //------------------------------------------------------------------------------
 // buffered
@@ -95,14 +97,22 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset,
         cerr << "Error opening file: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
-    if (fseek(f, offset, SEEK_SET)) {
-        cerr << "Error moving file pointer (fseek): " << strerror(errno)
-             << endl;
-        exit(EXIT_FAILURE);
-    }
-    if (fwrite(src, 1, size, f) != size) {
-        cerr << "Error reading from file: " << strerror(errno) << endl;
-        exit(EXIT_FAILURE);
+    transferSize = transferSize < 0 ? size : transferSize;
+    const size_t partSize = size / transferSize;
+    const size_t lastPartSize = size % transferSize
+                                    ? size / transferSize + size % transferSize
+                                    : partSize;
+    for (size_t off = 0; off < size; off += partSize) {
+        const size_t sz = off < size - partSize ? partSize : lastPartSize;
+        if (fseek(f, offset + off, SEEK_SET)) {
+            cerr << "Error moving file pointer (fseek): " << strerror(errno)
+                 << endl;
+            exit(EXIT_FAILURE);
+        }
+        if (fwrite(src + off, 1, sz, f) != sz) {
+            cerr << "Error reading from file: " << strerror(errno) << endl;
+            exit(EXIT_FAILURE);
+        }
     }
     if (fclose(f)) {
         cerr << "Error closing file: " << strerror(errno) << endl;
@@ -129,7 +139,7 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset,
                                     : partSize;
     for (size_t off = 0; off < size; off += partSize) {
         const size_t sz = off < size - partSize ? partSize : lastPartSize;
-        if (pwrite(fd, src, sz, offset + off) < 0) {
+        if (pwrite(fd, src + off, sz, offset + off) < 0) {
             cerr << "Failed to write to file. Error: " << strerror(errno)
                  << endl;
             exit(EXIT_FAILURE);
@@ -180,7 +190,10 @@ double Write(const char* fname, size_t size, int nthreads, size_t globalOffset,
 int main(int argc, char* argv[]) {
     if (argc != 4) {
         cerr << "Usage: " << argv[0]
-             << " <file name> <number of threads per process> <file size>"
+             << " <file name> <number of threads per process> <file size> "
+                "<transfer size>"
+             << endl
+             << " set transfer size to -1 to use default per thread buffer size"
              << endl
              << " in case the executable is invoked within slurm it will "
                 "distribute the computation across all processes automatically"
@@ -201,6 +214,11 @@ int main(int argc, char* argv[]) {
         cerr << "Error, invalid number of threads" << endl;
         exit(EXIT_FAILURE);
     }
+    const int64_t transferSize = strtoll(argv[3], NULL, 10);
+    if(transferSize == 0) {
+        cerr << "Error, wrong transfer buffer size" << endl;
+        exit(EXIT_FAILURE);
+    }
     const char* slurmProcId = getenv("SLURM_PROCID");
     const char* slurmNumTasks = getenv("SLURM_NTASKS");
     const char* slurmNodeId = getenv("SLURM_NODEID");
@@ -215,7 +233,8 @@ int main(int argc, char* argv[]) {
             ? fileSize / numProcesses
             : fileSize / numProcesses + fileSize % numProcesses;
     const size_t globalOffset = processIndex * partSize;
-    const double elapsed = Write(fileName, partSize, nthreads, globalOffset);
+    const double elapsed = Write(fileName, partSize, nthreads, globalOffset, 
+                                 transferSize);
     const double GiB = 1 << 30;
     const double GiBs = (partSize / GiB) / elapsed;
     if (slurmNodeId)

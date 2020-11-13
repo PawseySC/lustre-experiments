@@ -1,11 +1,11 @@
 /*******************************************************************************
  * BSD 3-Clause License
  *
- * Copyright (c) 2020, Commonwealth Scientific and Industrial Research 
+ * Copyright (c) 2020, Commonwealth Scientific and Industrial Research
  * Organisation (CSIRO) and The Pawsey Supercomputing Centre
- * 
+ *
  * Author: Ugo Varetto
- * 
+ *
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -102,20 +102,29 @@ using namespace std;
 // offset. Both buffered and unbuffered versions are implemented.
 #ifdef BUFFERED
 //------------------------------------------------------------------------------
-void ReadPart(const char* fname, char* dest, size_t size, size_t offset) {
+void ReadPart(const char* fname, char* dest, size_t size, size_t offset,
+              int64_t transferSize = -1) {
     FILE* f = fopen(fname, "rb");
     if (!f) {
         cerr << "Error opening file: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
-    if (fseek(f, offset, SEEK_SET)) {
-        cerr << "Error moving file pointer (fseek): " << strerror(errno)
-             << endl;
-        exit(EXIT_FAILURE);
-    }
-    if (fread(dest, 1, size, f) != size) {
-        cerr << "Error reading from file: " << strerror(errno) << endl;
-        exit(EXIT_FAILURE);
+    transferSize = transferSize < 0 ? size : transferSize;
+    const size_t partSize = size / transferSize;
+    const size_t lastPartSize = size % transferSize
+                                    ? size / transferSize + size % transferSize
+                                    : partSize;
+    for (size_t off = 0; off < size; off += partSize) {
+        const size_t sz = off < size - partSize ? partSize : lastPartSize;
+        if (fseek(f, offset + off, SEEK_SET)) {
+            cerr << "Error moving file pointer (fseek): " << strerror(errno)
+                 << endl;
+            exit(EXIT_FAILURE);
+        }
+        if (fread(dest + off, 1, sz, f) != sz) {
+            cerr << "Error reading from file: " << strerror(errno) << endl;
+            exit(EXIT_FAILURE);
+        }
     }
     if (fclose(f)) {
         cerr << "Error closing file: " << strerror(errno) << endl;
@@ -124,17 +133,27 @@ void ReadPart(const char* fname, char* dest, size_t size, size_t offset) {
 }
 #else
 // ubuffered
-void ReadPart(const char* fname, char* src, size_t size, size_t offset) {
-    const int flags = O_RDONLY | O_LARGEFILE; // if supported add O_DIRECT
-    const mode_t mode = 0444;  // user, goup, all: read
+void ReadPart(const char* fname, char* dest, size_t size, size_t offset,
+              int64_t transferSize = -1) {
+    const int flags = O_RDONLY | O_LARGEFILE;  // if supported add O_DIRECT
+    const mode_t mode = 0444;                  // user, goup, all: read
     int fd = open(fname, flags, mode);
     if (fd < 0) {
         cerr << "Failed to open file. Error: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
-    if (pread(fd, src, size, offset) < 0) {
-        cerr << "Failed to read from file. Error: " << strerror(errno) << endl;
-        exit(EXIT_FAILURE);
+    transferSize = transferSize < 0 ? size : transferSize;
+    const size_t partSize = size / transferSize;
+    const size_t lastPartSize = size % transferSize
+                                    ? size / transferSize + size % transferSize
+                                    : partSize;
+    for (size_t off = 0; off < size; off += partSize) {
+        const size_t sz = off < size - partSize ? partSize : lastPartSize;
+        if (pread(fd, dest + off, size, offset + off) < 0) {
+            cerr << "Failed to read from file. Error: " << strerror(errno)
+                 << endl;
+            exit(EXIT_FAILURE);
+        }
     }
     if (close(fd)) {
         cerr << "Error closing file " << strerror(errno) << endl;
@@ -156,15 +175,15 @@ size_t FileSize(const char* fname) {
 //------------------------------------------------------------------------------
 // Read file starting a specified global offset.
 // Global offset = process id X file size / # processes
-double Read(const char* fname, size_t size, int nthreads, size_t globalOffset) {
+double Read(const char* fname, size_t size, int nthreads, size_t globalOffset,
+            int64_t transferSize = -1) {
 #ifdef PAGE_ALIGNED
     char* buffer = static_cast<char*>(aligned_alloc(getpagesize(), size));
 #else
     char* buffer = static_cast<char*>(malloc(size));
 #endif
     if (!buffer) {
-        cerr << "Failed to allocate memory. Error: " << strerror(errno)
-             << endl;
+        cerr << "Failed to allocate memory. Error: " << strerror(errno) << endl;
     }
     const size_t partSize = size / nthreads;
     const size_t lastPartSize =
@@ -177,7 +196,7 @@ double Read(const char* fname, size_t size, int nthreads, size_t globalOffset) {
         const bool isLast = t == nthreads - 1;
         const size_t sz = isLast ? lastPartSize : partSize;
         readers[t] = async(launch::async, ReadPart, fname, buffer + offset, sz,
-                           offset + globalOffset);
+                           offset + globalOffset, transferSize);
     }
     for (auto& r : readers) r.wait();
     const auto end = Clock::now();
@@ -191,11 +210,15 @@ double Read(const char* fname, size_t size, int nthreads, size_t globalOffset) {
 int main(int argc, char* argv[]) {
     if (argc != 3) {
         cerr << "Usage: " << argv[0]
-             << " <file name> <number of threads per process>" << endl
+             << " <file name> <number of threads per process> <transfer size>"
+             << endl
+             << " set transfer size to -1 to use default per thread buffer size"
+             << endl
              << " in case the executable is invoked within slurm it will "
                 "distribute the computation across all processes automatically"
              << endl
-             << " CSV output format: node id, process id, bandwidth (GiB/s), time (s)"
+             << " CSV output format: node id, process id, bandwidth (GiB/s), "
+                "time (s)"
              << endl;
         exit(EXIT_FAILURE);
     }
@@ -204,6 +227,11 @@ int main(int argc, char* argv[]) {
     const int nthreads = strtoul(argv[2], NULL, 10);
     if (!nthreads) {
         cerr << "Error, invalid number of threads" << endl;
+        exit(EXIT_FAILURE);
+    }
+    const int64_t transferSize = strtoll(argv[2], NULL, 10);
+    if (transferSize == 0) {
+        cerr << "Error, wrong transfer buffer size" << endl;
         exit(EXIT_FAILURE);
     }
     const char* slurmProcId = getenv("SLURM_PROCID");
@@ -220,10 +248,12 @@ int main(int argc, char* argv[]) {
             ? fileSize / numProcesses
             : fileSize / numProcesses + fileSize % numProcesses;
     const size_t globalOffset = processIndex * partSize;
-    const double elapsed = Read(fileName, partSize, nthreads, globalOffset);
+    const double elapsed =
+        Read(fileName, partSize, nthreads, globalOffset, transferSize);
     const double GiB = 1 << 30;
     const double GiBs = (partSize / GiB) / elapsed;
-    if (slurmNodeId) cout << slurmNodeId << "," << processIndex << ","
-                          << GiBs << "," << elapsed << endl;
+    if (slurmNodeId)
+        cout << slurmNodeId << "," << processIndex << "," << GiBs << ","
+             << elapsed << endl;
     return 0;
 }
