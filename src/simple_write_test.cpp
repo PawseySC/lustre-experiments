@@ -48,6 +48,12 @@
 // options:
 //   page aligned memory buffer: -D PAGE_ALIGNED
 //   buffered: -D BUFFERED
+// execution:
+//   ./simple_write_test <output file name> <size> <num threads> <transfer size>
+//
+//   <transfer size> is the number of bytes written at each fwrite/pwrite call,
+//   set to -1 to perform one single write operation per thread with 
+//   buffer size = (file size) / ((number of processes) x (threads per process))
 //
 // Lustre:
 //

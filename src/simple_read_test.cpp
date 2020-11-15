@@ -47,6 +47,12 @@
 // options:
 //   page aligned memory buffer: -D PAGE_ALIGNED
 //   buffered: -D BUFFERED
+// execution:
+// ./simple_read_test <input file name> <num threads> <transfer size>
+//
+// <transfer size> is the number of bytes read at each fread/pread call,
+// set to -1 to perform one single read operation per thread with 
+// buffer size = (file size) / ((number of processes) x (threads per process))
 //
 // Lustre:
 //
