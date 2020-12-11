@@ -10,5 +10,6 @@ if [ ! -f $fname ]; then
   exit 1
 fi
 numprocs=lfs getstripe --stripe-count $fname
+if
 stripe_size=lfs getstripe --stripe-size $fname
 #srun -N $num_stripes ./slurm_par_read_file.sh $fname $stripe_size 
