@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Print number of OSTs
+# Author: Ugo Varetto 
 if [ $# -ne 1 ]; then
   echo "print number of OSTs, usage: $0 <path>"
   exit 1
