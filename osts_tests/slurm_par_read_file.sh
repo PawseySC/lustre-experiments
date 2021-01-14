@@ -21,9 +21,9 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 part_size=$(($filesize/$SLURM_NTASKS))
-
+block_offset=$SLURM_PROCID
 #read from file at location $SLURM_PROCID x $part_size
-ddout=`dd if=$file_name of=/dev/zero bs=$part_size count=1 skip=$SLURM_PROCID`
+ddout=`dd if=$file_name of=/dev/zero bs=$part_size count=1 skip=$block_offset`
 if [ $? -ne 0 ]; then
   echo "Error running 'dd' command"
   exit 1

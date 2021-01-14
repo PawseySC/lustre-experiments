@@ -26,7 +26,7 @@ part_size=$(($filesize/$SLURM_NTASKS))
 byte_offset=$(($SLURM_PROCID * $part_size))
 block_offset=$SLURM_PROCID
 #echo "Offset: ${byte_offset}"
-ddout=`dd if=/dev/zero of=$file_name bs=$part_size count=1 seek=$block_offset`
+ddout=`dd if=/dev/zero of=$file_name bs=$part_size count=1 oflag=nonblock conv=notrunc seek=$block_offset`
 if [ $? -ne 0 ]; then
   echo "Error running 'dd' command"
   exit 1

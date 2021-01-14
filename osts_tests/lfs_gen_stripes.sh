@@ -9,7 +9,7 @@ fi
 fname=$1
 stripe_size=$2
 num_stripes=$3
-lfs setstripe -c $num_stripes -S $stripe_size $fname -i 0
+lfs setstripe -c $num_stripes -S $stripe_size $fname
 if [ $? -ne 0 ]; then
   echo "Error creating striped file ${fname}, num stripes=${num_stripes}, stripe size=${stripe_size}"
   exit 1

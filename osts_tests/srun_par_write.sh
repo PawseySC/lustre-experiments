@@ -9,11 +9,11 @@
 #
 if [ $# -ne 3 ]; then
   echo "Parallel write, one stripe per process"
-  echo "usage: $0 <file path> <file size> <num nodes>"
+  echo "usage: $0 <file path> <file size>"
 fi
 fname=$1
 filesize=$2
-nodes=$3
+nodes=$SLURM_JOB_NUM_NODES
 stripe_size=$(($filesize/$SLURM_NTASKS))
 stripes=$SLURM_NTASKS
 echo "Stripe size: ${stripe_size}"
