@@ -35,54 +35,26 @@
  * POSSIBILITY OF SUCH DAMAGE.
  ******************************************************************************/
 
-// simple parallel read test: each thread reads from a different location
-//                            in the input file, in case the executable is
-//                            invoked within slurm it will distribute the
-//                            computation across all processes automatically,
-//                            with each process reading a different sub-region
-//                            of the file
+// Author: Ugo Varetto
+// simple multithreaded write test: each thread writes to a different location
+//                                  in the output file
 // compilation:
-//     g++ -pthread simple_read_test.cpp -O2 -o simple_read_test \
+//     g++ -pthread write_test_mt.cpp -O3 -o write_bandwidth \
 //          [-D PAGE_ALIGNED] [-D BUFFERED]
 // options:
 //   page aligned memory buffer: -D PAGE_ALIGNED
 //   buffered: -D BUFFERED
 // execution:
-// ./simple_read_test <input file name> <num threads> <transfer size>
+//   ./write_test_mt <output file name> <size> <num threads> <transfer size>
 //
-// <transfer size> is the number of bytes read at each fread/pread call,
-// set to -1 to perform one single read operation per thread with 
-// buffer size = (file size) / ((number of processes) x (threads per process))
-//
-// Lustre:
-//
-// retrieve stripe count and size: lfs getstripe <file name>
-//
-// create 0 byte 32-stripe, 10G/32 bytes per stripe:
-// lfs setstripe file -c 32  -S $((10*2**30/32)
-//
-// fill file with data: dd if=/dev/zero of=infile bs=1G count=10
-// note: when data validation is required /dev/urandom should be used
-// instead
+//   <transfer size> is the number of bytes written at each fwrite/pwrite call,
+//   set to -1 to perform one single write operation per thread with
+//   buffer size = (file size) / (number of threads)
 
-// uvaretto@zeus-1:~/projects/lustre-scratch/tmp> time srun -n 4 -N 4
-// --cpus-per-task 16 --mem 32000 -p copyq ./rt data/striped_10G_over_64/10Ghpc3
-// 16 srun: job 4866510 queued and waiting for resources srun: job 4866510 has
-// been allocated resources Process: 2 Bandwidth: 5.00696 GiB/s Elapsed
-// time: 1.99722 seconds
-//
-// Process: 1 Bandwidth: 4.84904 GiB/s
-// Elapsed time: 2.06227 seconds
-//
-// Process: 3 Bandwidth: 4.61036 GiB/s
-// Elapsed time: 2.16903 seconds
-//
-// Process: 0 Bandwidth: 4.82129 GiB/s
-// Elapsed time: 2.07414 seconds
-//
-// real    0m3.469s
-// user    0m0.013s
-// sys     0m0.008s
+// To compile statically:
+// g++ -pthread ../write_test_mt.cpp -o write_test_buffered -O3 \
+// -static -static-libstdc++ -static-libgcc -lrt  -Wl,--whole-archive \
+// -lpthread -Wl,--no-whole-archive
 
 #include <errno.h>
 #include <fcntl.h>
@@ -96,6 +68,7 @@
 #include <cstring>
 #include <future>
 #include <iostream>
+#include <memory>
 #include <numeric>
 
 using namespace std;
@@ -105,20 +78,22 @@ using namespace std;
 #endif
 
 // The following functions write a single file part, starting at a specific
-// offset. Both buffered and unbuffered versions are implemented.
+// offset, buffer transer size can be specified, otherwise the transfer buffer
+// size will be equal to overall buffer size.
+// Both buffered and unbuffered versions are implemented.
 #ifdef BUFFERED
 //------------------------------------------------------------------------------
-void ReadPart(const char* fname, char* dest, size_t size, size_t offset,
-              int64_t partSize = -1) {
-    FILE* f = fopen(fname, "rb");
+// buffered
+void WritePart(const char* fname, char* src, size_t size, size_t offset,
+               int64_t partSize = -1) {
+    FILE* f = fopen(fname, "wb");
     if (!f) {
         cerr << "Error opening file: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
     partSize = partSize < 0 ? size : partSize;
-    const size_t lastPartSize = size % partSize
-                                    ? size / partSize + size % partSize
-                                    : partSize;
+    const size_t lastPartSize =
+        size % partSize ? size / partSize + size % partSize : partSize;
     for (size_t off = 0; off < size; off += partSize) {
         const size_t sz = off < size - partSize ? partSize : lastPartSize;
         if (fseek(f, offset + off, SEEK_SET)) {
@@ -126,7 +101,7 @@ void ReadPart(const char* fname, char* dest, size_t size, size_t offset,
                  << endl;
             exit(EXIT_FAILURE);
         }
-        if (fread(dest + off, 1, sz, f) != sz) {
+        if (fwrite(src + off, 1, sz, f) != sz) {
             cerr << "Error reading from file: " << strerror(errno) << endl;
             exit(EXIT_FAILURE);
         }
@@ -137,24 +112,25 @@ void ReadPart(const char* fname, char* dest, size_t size, size_t offset,
     }
 }
 #else
+//------------------------------------------------------------------------------
 // ubuffered
-void ReadPart(const char* fname, char* dest, size_t size, size_t offset,
-              int64_t partSize = -1) {
-    const int flags = O_RDONLY | O_LARGEFILE;  // if supported add O_DIRECT
-    const mode_t mode = 0444;                  // user, goup, all: read
+void WritePart(const char* fname, char* src, size_t size, size_t offset,
+               int64_t partSize = -1) {
+    const int flags = O_WRONLY | O_CREAT |
+                      O_LARGEFILE;  // if supported by filesystem, add O_DIRECT
+    const mode_t mode = 0644;       // user read/write, group read, all read
     int fd = open(fname, flags, mode);
     if (fd < 0) {
         cerr << "Failed to open file. Error: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
     partSize = partSize < 0 ? size : partSize;
-    const size_t lastPartSize = size % partSize
-                                    ? size / partSize + size % partSize
-                                    : partSize;
+    const size_t lastPartSize =
+        size % partSize ? size / partSize + size % partSize : partSize;
     for (size_t off = 0; off < size; off += partSize) {
         const size_t sz = off < size - partSize ? partSize : lastPartSize;
-        if (pread(fd, dest + off, size, offset + off) < 0) {
-            cerr << "Failed to read from file. Error: " << strerror(errno)
+        if (pwrite(fd, src + off, sz, offset + off) < 0) {
+            cerr << "Failed to write to file. Error: " << strerror(errno)
                  << endl;
             exit(EXIT_FAILURE);
         }
@@ -167,20 +143,10 @@ void ReadPart(const char* fname, char* dest, size_t size, size_t offset,
 #endif
 
 //------------------------------------------------------------------------------
-size_t FileSize(const char* fname) {
-    struct stat st;
-    if (stat(fname, &st)) {
-        cerr << "Error retrieving file size: " << strerror(errno) << endl;
-        exit(EXIT_FAILURE);
-    }
-    return st.st_size;
-}
-
-//------------------------------------------------------------------------------
-// Read file starting a specified global offset.
-// Global offset = process id X file size / # processes
-double Read(const char* fname, size_t size, int nthreads, size_t globalOffset,
-            int64_t transferSize = -1) {
+// Write to file in parallel starting at global offset (process id X file size /
+// # processes)
+double Write(const char* fname, size_t size, int nthreads,
+             int64_t transferSize = -1) {
 #ifdef PAGE_ALIGNED
     char* buffer = static_cast<char*>(aligned_alloc(getpagesize(), size));
 #else
@@ -192,17 +158,17 @@ double Read(const char* fname, size_t size, int nthreads, size_t globalOffset,
     const size_t partSize = size / nthreads;
     const size_t lastPartSize =
         size % nthreads == 0 ? partSize : size % nthreads + partSize;
-    future<void> readers[nthreads];
+    future<void> writers[nthreads];
     using Clock = chrono::high_resolution_clock;
     auto start = Clock::now();
     for (int t = 0; t != nthreads; ++t) {
         const size_t offset = partSize * t;
         const bool isLast = t == nthreads - 1;
         const size_t sz = isLast ? lastPartSize : partSize;
-        readers[t] = async(launch::async, ReadPart, fname, buffer + offset, sz,
-                           offset + globalOffset, transferSize);
+        writers[t] = async(launch::async, WritePart, fname, buffer + offset, sz,
+                           offset, transferSize);
     }
-    for (auto& r : readers) r.wait();
+    for (auto& w : writers) w.wait();
     const auto end = Clock::now();
     free(buffer);
     return double(chrono::duration_cast<chrono::nanoseconds>(end - start)
@@ -210,54 +176,52 @@ double Read(const char* fname, size_t size, int nthreads, size_t globalOffset,
            1E9;
 }
 
+// Compilation options
+#ifdef PAGE_ALIGNED
+static const char* page_aligned = "Page aligned: yes";
+#else
+static const char* page_aligned = "Page aligned: no";
+#endif
+#ifdef BUFFERED
+static const char* buffered = "Buffered: yes";
+#else
+static const char* buffered = "Buffered: no";
+#endif
+
 //-----------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
-    if (argc != 3) {
+    if (argc != 5) {
         cerr << "Usage: " << argv[0]
-             << " <file name> <number of threads per process> <transfer size>"
+             << " <file name> <number of threads> <file size> "
+                "<per write transfer size>"
              << endl
              << " set transfer size to -1 to use default per thread buffer size"
-             << endl
-             << " in case the executable is invoked within slurm it will "
-                "distribute the computation across all processes automatically"
-             << endl
-             << " CSV output format: node id, process id, bandwidth (GiB/s), "
-                "time (s)"
              << endl;
+        cerr << "Compilation options:" << endl
+             << "  " << buffered << endl
+             << "  " << page_aligned << endl;
         exit(EXIT_FAILURE);
     }
     const char* fileName = argv[1];
-    const size_t fileSize = FileSize(fileName);
+    const size_t fileSize = strtoull(argv[3], NULL, 10);
+    if (fileSize == 0) {
+        cerr << "Error, wrong file size" << endl;
+        exit(EXIT_FAILURE);
+    }
     const int nthreads = strtoul(argv[2], NULL, 10);
     if (!nthreads) {
         cerr << "Error, invalid number of threads" << endl;
         exit(EXIT_FAILURE);
     }
-    const int64_t transferSize = strtoll(argv[2], NULL, 10);
+    int64_t transferSize = strtoll(argv[4], NULL, 10);
     if (transferSize == 0) {
         cerr << "Error, wrong transfer buffer size" << endl;
         exit(EXIT_FAILURE);
     }
-    const char* slurmProcId = getenv("SLURM_PROCID");
-    const char* slurmNumTasks = getenv("SLURM_NTASKS");
-    const char* slurmNodeId = getenv("SLURM_NODEID");
-    const int processIndex = slurmProcId ? strtoull(slurmProcId, NULL, 10) : 0;
-    const int numProcesses =
-        slurmNumTasks ? strtoull(slurmNumTasks, NULL, 10) : 1;
-    // processes 0 to numProcesses - 1 read the same amount of data;
-    // process with index == numProcesses - 1 reads the same amount of data
-    // as the others + remainder of fileSize / numProcesses division
-    const size_t partSize =
-        processIndex != numProcesses - 1
-            ? fileSize / numProcesses
-            : fileSize / numProcesses + fileSize % numProcesses;
-    const size_t globalOffset = processIndex * partSize;
-    const double elapsed =
-        Read(fileName, partSize, nthreads, globalOffset, transferSize);
+
+    const double elapsed = Write(fileName, fileSize, nthreads);
     const double GiB = 1 << 30;
-    const double GiBs = (partSize / GiB) / elapsed;
-    if (slurmNodeId)
-        cout << slurmNodeId << "," << processIndex << "," << GiBs << ","
-             << elapsed << endl;
+    const double GiBs = (fileSize / GiB) / elapsed;
+    cout << GiBs << " GB/s" << endl;
     return 0;
 }

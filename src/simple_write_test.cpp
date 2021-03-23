@@ -97,16 +97,15 @@ using namespace std;
 //------------------------------------------------------------------------------
 // buffered
 void WritePart(const char* fname, char* src, size_t size, size_t offset,
-               int64_t transferSize = -1) {
+               int64_t partSize = -1) {
     FILE* f = fopen(fname, "wb");
     if (!f) {
         cerr << "Error opening file: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
-    transferSize = transferSize < 0 ? size : transferSize;
-    const size_t partSize = size / transferSize;
-    const size_t lastPartSize = size % transferSize
-                                    ? size / transferSize + size % transferSize
+    partSize = partSize < 0 ? size : partSize;
+    const size_t lastPartSize = size % partSize
+                                    ? size / partSize + size % partSize
                                     : partSize;
     for (size_t off = 0; off < size; off += partSize) {
         const size_t sz = off < size - partSize ? partSize : lastPartSize;
@@ -129,7 +128,7 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset,
 //------------------------------------------------------------------------------
 // ubuffered
 void WritePart(const char* fname, char* src, size_t size, size_t offset,
-               int64_t transferSize = -1) {
+               int64_t partSize = -1) {
     const int flags = O_WRONLY | O_CREAT |
                       O_LARGEFILE;  // if supported by filesystem, add O_DIRECT
     const mode_t mode = 0644;       // user read/write, group read, all read
@@ -138,10 +137,9 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset,
         cerr << "Failed to open file. Error: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
-    transferSize = transferSize < 0 ? size : transferSize;
-    const size_t partSize = size / transferSize;
-    const size_t lastPartSize = size % transferSize
-                                    ? size / transferSize + size % transferSize
+    partSize = partSize < 0 ? size : partSize;
+    const size_t lastPartSize = size % partSize
+                                    ? size / partSize + size % partSize
                                     : partSize;
     for (size_t off = 0; off < size; off += partSize) {
         const size_t sz = off < size - partSize ? partSize : lastPartSize;
@@ -194,7 +192,7 @@ double Write(const char* fname, size_t size, int nthreads, size_t globalOffset,
 
 //-----------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
-    if (argc != 4) {
+    if (argc != 5) {
         cerr << "Usage: " << argv[0]
              << " <file name> <number of threads per process> <file size> "
                 "<transfer size>"
@@ -220,11 +218,12 @@ int main(int argc, char* argv[]) {
         cerr << "Error, invalid number of threads" << endl;
         exit(EXIT_FAILURE);
     }
-    const int64_t transferSize = strtoll(argv[3], NULL, 10);
+    int64_t transferSize = strtoll(argv[4], NULL, 10);
     if(transferSize == 0) {
         cerr << "Error, wrong transfer buffer size" << endl;
         exit(EXIT_FAILURE);
     }
+    
     const char* slurmProcId = getenv("SLURM_PROCID");
     const char* slurmNumTasks = getenv("SLURM_NTASKS");
     const char* slurmNodeId = getenv("SLURM_NODEID");
@@ -246,5 +245,6 @@ int main(int argc, char* argv[]) {
     if (slurmNodeId)
         cout << slurmNodeId << "," << processIndex << "," << GiBs << ","
              << elapsed << endl;
+
     return 0;
 }

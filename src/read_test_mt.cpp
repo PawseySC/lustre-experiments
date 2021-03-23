@@ -35,54 +35,25 @@
  * POSSIBILITY OF SUCH DAMAGE.
  ******************************************************************************/
 
-// simple parallel read test: each thread reads from a different location
-//                            in the input file, in case the executable is
-//                            invoked within slurm it will distribute the
-//                            computation across all processes automatically,
-//                            with each process reading a different sub-region
-//                            of the file
+// simple multithreaed read test: each thread reads from a different location
+//                               in the input file
 // compilation:
-//     g++ -pthread simple_read_test.cpp -O2 -o simple_read_test \
+//     g++ -pthread read_test_mt.cpp -O3 -o read_test_mt \
 //          [-D PAGE_ALIGNED] [-D BUFFERED]
 // options:
 //   page aligned memory buffer: -D PAGE_ALIGNED
 //   buffered: -D BUFFERED
 // execution:
-// ./simple_read_test <input file name> <num threads> <transfer size>
+// ./read_test_mt <input file name> <num threads> <transfer size>
 //
 // <transfer size> is the number of bytes read at each fread/pread call,
 // set to -1 to perform one single read operation per thread with 
 // buffer size = (file size) / ((number of processes) x (threads per process))
-//
-// Lustre:
-//
-// retrieve stripe count and size: lfs getstripe <file name>
-//
-// create 0 byte 32-stripe, 10G/32 bytes per stripe:
-// lfs setstripe file -c 32  -S $((10*2**30/32)
-//
-// fill file with data: dd if=/dev/zero of=infile bs=1G count=10
-// note: when data validation is required /dev/urandom should be used
-// instead
 
-// uvaretto@zeus-1:~/projects/lustre-scratch/tmp> time srun -n 4 -N 4
-// --cpus-per-task 16 --mem 32000 -p copyq ./rt data/striped_10G_over_64/10Ghpc3
-// 16 srun: job 4866510 queued and waiting for resources srun: job 4866510 has
-// been allocated resources Process: 2 Bandwidth: 5.00696 GiB/s Elapsed
-// time: 1.99722 seconds
-//
-// Process: 1 Bandwidth: 4.84904 GiB/s
-// Elapsed time: 2.06227 seconds
-//
-// Process: 3 Bandwidth: 4.61036 GiB/s
-// Elapsed time: 2.16903 seconds
-//
-// Process: 0 Bandwidth: 4.82129 GiB/s
-// Elapsed time: 2.07414 seconds
-//
-// real    0m3.469s
-// user    0m0.013s
-// sys     0m0.008s
+// To compile statically:
+// g++ -pthread ../read_test_mt.cpp -o write_test_buffered -O3 \
+// -static -static-libstdc++ -static-libgcc -lrt  -Wl,--whole-archive \
+// -lpthread -Wl,--no-whole-archive
 
 #include <errno.h>
 #include <fcntl.h>
@@ -179,7 +150,7 @@ size_t FileSize(const char* fname) {
 //------------------------------------------------------------------------------
 // Read file starting a specified global offset.
 // Global offset = process id X file size / # processes
-double Read(const char* fname, size_t size, int nthreads, size_t globalOffset,
+double Read(const char* fname, size_t size, int nthreads,
             int64_t transferSize = -1) {
 #ifdef PAGE_ALIGNED
     char* buffer = static_cast<char*>(aligned_alloc(getpagesize(), size));
@@ -200,7 +171,7 @@ double Read(const char* fname, size_t size, int nthreads, size_t globalOffset,
         const bool isLast = t == nthreads - 1;
         const size_t sz = isLast ? lastPartSize : partSize;
         readers[t] = async(launch::async, ReadPart, fname, buffer + offset, sz,
-                           offset + globalOffset, transferSize);
+                           offset, transferSize);
     }
     for (auto& r : readers) r.wait();
     const auto end = Clock::now();
@@ -210,20 +181,29 @@ double Read(const char* fname, size_t size, int nthreads, size_t globalOffset,
            1E9;
 }
 
+// Compilation options
+#ifdef PAGE_ALIGNED
+static const char* page_aligned = "Page aligned: yes";
+#else
+static const char* page_aligned = "Page aligned: no";
+#endif
+#ifdef BUFFERED
+static const char* buffered = "Buffered: yes";
+#else
+static const char* buffered = "Buffered: no";
+#endif
+
 //-----------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
-    if (argc != 3) {
+    if (argc != 4) {
         cerr << "Usage: " << argv[0]
              << " <file name> <number of threads per process> <transfer size>"
              << endl
              << " set transfer size to -1 to use default per thread buffer size"
-             << endl
-             << " in case the executable is invoked within slurm it will "
-                "distribute the computation across all processes automatically"
-             << endl
-             << " CSV output format: node id, process id, bandwidth (GiB/s), "
-                "time (s)"
              << endl;
+        cerr << "Compilation options:" << endl
+             << "  " << buffered << endl
+             << "  " << page_aligned << endl;    
         exit(EXIT_FAILURE);
     }
     const char* fileName = argv[1];
@@ -233,31 +213,15 @@ int main(int argc, char* argv[]) {
         cerr << "Error, invalid number of threads" << endl;
         exit(EXIT_FAILURE);
     }
-    const int64_t transferSize = strtoll(argv[2], NULL, 10);
+    const int64_t transferSize = strtoll(argv[3], NULL, 10);
     if (transferSize == 0) {
         cerr << "Error, wrong transfer buffer size" << endl;
         exit(EXIT_FAILURE);
     }
-    const char* slurmProcId = getenv("SLURM_PROCID");
-    const char* slurmNumTasks = getenv("SLURM_NTASKS");
-    const char* slurmNodeId = getenv("SLURM_NODEID");
-    const int processIndex = slurmProcId ? strtoull(slurmProcId, NULL, 10) : 0;
-    const int numProcesses =
-        slurmNumTasks ? strtoull(slurmNumTasks, NULL, 10) : 1;
-    // processes 0 to numProcesses - 1 read the same amount of data;
-    // process with index == numProcesses - 1 reads the same amount of data
-    // as the others + remainder of fileSize / numProcesses division
-    const size_t partSize =
-        processIndex != numProcesses - 1
-            ? fileSize / numProcesses
-            : fileSize / numProcesses + fileSize % numProcesses;
-    const size_t globalOffset = processIndex * partSize;
     const double elapsed =
-        Read(fileName, partSize, nthreads, globalOffset, transferSize);
+        Read(fileName, fileSize, nthreads, transferSize);
     const double GiB = 1 << 30;
-    const double GiBs = (partSize / GiB) / elapsed;
-    if (slurmNodeId)
-        cout << slurmNodeId << "," << processIndex << "," << GiBs << ","
-             << elapsed << endl;
+    const double GiBs = (fileSize / GiB) / elapsed;
+    cout << GiBs << " GB/s" << endl;
     return 0;
 }

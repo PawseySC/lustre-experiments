@@ -181,7 +181,7 @@ ReadInfo ReadPartMem(const char* fname, char* dest, size_t size,
     }
     auto start = chrono::high_resolution_clock::now();
     copy(src, src + size,
-         dest);  // note: it will invoke __mempcy_avx_unaligned!
+         dest);  // note: it invokes __mempcy_avx_unaligned!
     auto end = chrono::high_resolution_clock::now();
     if (munmap(src, sz)) {
         cerr << "Error unmapping memory: " << strerror(errno) << endl;
