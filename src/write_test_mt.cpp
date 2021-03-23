@@ -50,6 +50,12 @@
 //   <transfer size> is the number of bytes written at each fwrite/pwrite call,
 //   set to -1 to perform one single write operation per thread with
 //   buffer size = (file size) / (number of threads)
+//
+// WARNING: when enabling memory mapped I/O each chunk in the memory
+//          buffer must be aligned to a page boundary; the chunk size
+//          and number of threads is changed to address this requirement
+//          resulting in the number of threads spawned different from the 
+//          one specified on the command line in some cases
 
 // To compile statically:
 // g++ -pthread ../write_test_mt.cpp -o write_test_buffered -O3 \
@@ -59,6 +65,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -111,6 +118,46 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset,
         exit(EXIT_FAILURE);
     }
 }
+#elif MMAP
+#ifndef PAGE_ALIGNED
+#define PAGE_ALIGNED
+#endif  //  PAGE_ALIGNED
+// read file part from #define PAGE_ALIGNEDmemory mapped file
+void WritePart(const char* fname, char* src, size_t size, size_t offset,
+               int64_t partSize = -1) {
+    int fd = open(fname, O_RDWR | O_LARGEFILE, (mode_t)0644);
+    if (fd < 0) {
+        cerr << "Error cannot open outputfile: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    char* dest = (char*)mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE,
+                             fd, offset);
+    if (dest == MAP_FAILED) {  // mmap returns (void *) -1 == MAP_FAILED
+        cerr << "Error mmap: " << strerror(errno) << endl;
+        cerr << "  make sure chunks are aligned to page size " << endl;
+        cerr << "  system page size: " << getpagesize() << endl;
+        exit(EXIT_FAILURE);
+    }
+    auto start = chrono::high_resolution_clock::now();
+    copy(src, src + size,
+         dest);  // note: it invokes __mempcy_avx_unaligned!
+
+    if (msync(dest, size, MS_SYNC) == -1) {
+        cerr << "Could not sync the file to disk" << endl;
+        exit(EXIT_FAILURE);
+    }
+    auto end = chrono::high_resolution_clock::now();
+
+    if (munmap(dest, size)) {
+        cerr << "Error unmapping memory: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    if (close(fd)) {
+        cerr << "Error closing file: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+}
 #else
 //------------------------------------------------------------------------------
 // ubuffered
@@ -152,12 +199,26 @@ double Write(const char* fname, size_t size, int nthreads,
 #else
     char* buffer = static_cast<char*>(malloc(size));
 #endif
+#ifdef MMAP
+    int fd = open(fname, O_RDWR | O_CREAT | O_LARGEFILE, (mode_t)0644);
+    lseek(fd, size, SEEK_SET);
+    write(fd, "", 1);
+    close(fd);
+#endif
     if (!buffer) {
         cerr << "Failed to allocate memory. Error: " << strerror(errno) << endl;
     }
-    const size_t partSize = size / nthreads;
-    const size_t lastPartSize =
-        size % nthreads == 0 ? partSize : size % nthreads + partSize;
+    size_t partSize = size / nthreads;
+#ifdef MMAP // each part must be aligned to a page boundary
+    if(partSize % getpagesize() != 0) {
+        const size_t Q = partSize / getpagesize();
+        partSize = getpagesize() * (Q + 1);
+    }
+    while(partSize * nthreads > size) {
+        --nthreads;
+    }
+#endif
+    const size_t lastPartSize = size - partSize * (nthreads - 1);
     future<void> writers[nthreads];
     using Clock = chrono::high_resolution_clock;
     auto start = Clock::now();

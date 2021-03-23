@@ -43,12 +43,19 @@
 // options:
 //   page aligned memory buffer: -D PAGE_ALIGNED
 //   buffered: -D BUFFERED
+//   memory mapped: -D MMAP automatically enables PAGE_ALIGNED
 // execution:
 // ./read_test_mt <input file name> <num threads> <transfer size>
 //
+// WARNING: when enabling memory mapped I/O each chunk in the memory
+//          buffer must be aligned to a page boundary; the chunk size
+//          and number of threads is changed to address this requirement
+//          resulting in the number of threads spawned different from the 
+//          one specified on the command line in some cases
+//
 // <transfer size> is the number of bytes read at each fread/pread call,
 // set to -1 to perform one single read operation per thread with 
-// buffer size = (file size) / ((number of processes) x (threads per process))
+// buffer size = (file size) / (number of threads)
 
 // To compile statically:
 // g++ -pthread ../read_test_mt.cpp -o write_test_buffered -O3 \
@@ -60,6 +67,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <sys/mman.h>
 
 #include <cerrno>
 #include <chrono>
@@ -103,6 +111,37 @@ void ReadPart(const char* fname, char* dest, size_t size, size_t offset,
         }
     }
     if (fclose(f)) {
+        cerr << "Error closing file: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+}
+#elif MMAP
+#ifndef PAGE_ALIGNED
+#define PAGE_ALIGNED
+#endif //  PAGE_ALIGNED 
+// read file part from #define PAGE_ALIGNEDmemory mapped file
+void ReadPart(const char* fname, char* dest, size_t size,
+              size_t offset, int64_t partSize = -1) {
+    int fd = open(fname, O_RDONLY | O_LARGEFILE); // O_DIRECT
+    if (fd < 0) {
+        cerr << "Error cannot open input file: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    const size_t sz = max(size, size_t(4096));
+    char* src = (char*) mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, offset);
+    if (src == MAP_FAILED) {  // mmap returns (void *) -1 == MAP_FAILED
+        cerr << "Error mmap: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    auto start = chrono::high_resolution_clock::now();
+    copy(src, src + size,
+         dest);  // note: it invokes __mempcy_avx_unaligned!
+    auto end = chrono::high_resolution_clock::now();
+    if (munmap(src, sz)) {
+        cerr << "Error unmapping memory: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    if (close(fd)) {
         cerr << "Error closing file: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
     }
@@ -160,9 +199,17 @@ double Read(const char* fname, size_t size, int nthreads,
     if (!buffer) {
         cerr << "Failed to allocate memory. Error: " << strerror(errno) << endl;
     }
-    const size_t partSize = size / nthreads;
-    const size_t lastPartSize =
-        size % nthreads == 0 ? partSize : size % nthreads + partSize;
+    size_t partSize = size / nthreads;
+#ifdef MMAP // each part must be aligned to a page boundary
+    if(partSize % getpagesize() != 0) {
+        const size_t Q = partSize / getpagesize();
+        partSize = getpagesize() * (Q + 1);
+    }
+    while(partSize * nthreads > size) {
+        --nthreads;
+    }
+#endif
+    const size_t lastPartSize = size - partSize * (nthreads - 1);
     future<void> readers[nthreads];
     using Clock = chrono::high_resolution_clock;
     auto start = Clock::now();
@@ -192,6 +239,12 @@ static const char* buffered = "Buffered: yes";
 #else
 static const char* buffered = "Buffered: no";
 #endif
+#ifdef MMAP
+static const char* mmapped = "Memory mapped: yes"
+#else
+static const char* mmapped = "Memory mapped: no"
+#endif
+
 
 //-----------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
