@@ -199,7 +199,7 @@ int main(int argc, char* argv[]) {
              << endl
              << " set transfer size to -1 to use default per thread buffer size"
              << endl
-             << " in case the executable is invoked within slurm it will "
+             << " SLURM required: it will "
                 "distribute the computation across all processes automatically"
              << endl
              << " CSV output format: node id, process id, bandwidth (GiB/s), "
