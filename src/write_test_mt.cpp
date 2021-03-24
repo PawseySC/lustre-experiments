@@ -46,6 +46,9 @@
 //   buffered: -D BUFFERED
 // execution:
 //   ./write_test_mt <output file name> <size> <num threads> <transfer size>
+// 
+// memory mapped option does not support transfer size regardless of the number
+// specified on the command line
 //
 //   <transfer size> is the number of bytes written at each fwrite/pwrite call,
 //   set to -1 to perform one single write operation per thread with

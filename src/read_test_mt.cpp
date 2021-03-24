@@ -47,6 +47,8 @@
 // execution:
 // ./read_test_mt <input file name> <num threads> <transfer size>
 //
+// memory mapped option does not support transfer size
+//
 // WARNING: when enabling memory mapped I/O each chunk in the memory
 //          buffer must be aligned to a page boundary; the chunk size
 //          and number of threads is changed to address this requirement
