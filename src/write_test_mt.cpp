@@ -113,6 +113,9 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset,
             exit(EXIT_FAILURE);
         }
     }
+#ifdef SYNC_PER_THREAD
+    fsync(fileno(f));
+#endif
     if (fclose(f)) {
         cerr << "Error closing file: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
@@ -143,10 +146,12 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset,
     copy(src, src + size,
          dest);  // note: it invokes __mempcy_avx_unaligned!
 
-    if (msync(dest, size, MS_SYNC) == -1) {
+#ifdef SYNC_PER_THREAD
+    if (msync(dest, size, MS_SYNC)) {
         cerr << "Could not sync the file to disk" << endl;
         exit(EXIT_FAILURE);
     }
+#endif
     auto end = chrono::high_resolution_clock::now();
 
     if (munmap(dest, size)) {
@@ -182,6 +187,9 @@ void WritePart(const char* fname, char* src, size_t size, size_t offset,
             exit(EXIT_FAILURE);
         }
     }
+#ifdef SYNC_PER_THREAD
+    fsync(fd);
+#endif
     if (close(fd)) {
         cerr << "Error closing file " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
@@ -201,9 +209,18 @@ double Write(const char* fname, size_t size, int nthreads,
 #endif
 #ifdef MMAP
     int fd = open(fname, O_RDWR | O_CREAT | O_LARGEFILE, (mode_t)0644);
-    lseek(fd, size, SEEK_SET);
-    write(fd, "", 1);
-    close(fd);
+    if(lseek(fd, size, SEEK_SET) < 0) {
+        cerr << "Error: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    if(write(fd, "", 1) < 0) {
+        cerr << "Error writing to file: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
+    if( close(fd) < 0) {
+        cerr << "Error closing file: " << strerror(errno) << endl;
+        exit(EXIT_FAILURE);
+    }
 #endif
     if (!buffer) {
         cerr << "Failed to allocate memory. Error: " << strerror(errno) << endl;
@@ -230,6 +247,11 @@ double Write(const char* fname, size_t size, int nthreads,
                            offset, transferSize);
     }
     for (auto& w : writers) w.wait();
+#ifndef SYNC_PER_THREAD
+#ifndef NO_SYNC    
+    sync();
+#endif
+#endif
     const auto end = Clock::now();
     free(buffer);
     return double(chrono::duration_cast<chrono::nanoseconds>(end - start)

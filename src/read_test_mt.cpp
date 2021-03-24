@@ -110,6 +110,7 @@ void ReadPart(const char* fname, char* dest, size_t size, size_t offset,
             exit(EXIT_FAILURE);
         }
     }
+
     if (fclose(f)) {
         cerr << "Error closing file: " << strerror(errno) << endl;
         exit(EXIT_FAILURE);
@@ -240,9 +241,9 @@ static const char* buffered = "Buffered: yes";
 static const char* buffered = "Buffered: no";
 #endif
 #ifdef MMAP
-static const char* mmapped = "Memory mapped: yes"
+static const char* mmapped = "Memory mapped: yes";
 #else
-static const char* mmapped = "Memory mapped: no"
+static const char* mmapped = "Memory mapped: no";
 #endif
 
 
